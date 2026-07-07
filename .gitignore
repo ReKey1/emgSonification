@@ -1,0 +1,20 @@
+# Recorded EMG sessions (data, not code)
+recordings/
+
+# Local runtime config overrides
+config.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,12 @@
+# cheezEMG host software dependencies.
+#
+# Note: SciPy currently pins NumPy < 2.3. If `pip install` pulls a newer NumPy
+# you may see a harmless version warning; if it actually errors, pin with:
+#   pip install "numpy<2.3"
+numpy>=1.22
+scipy>=1.10
+pyserial>=3.5
+sounddevice>=0.4        # real-time audio out (bundles PortAudio wheels)
+matplotlib>=3.6         # live plot in the UI
+# tkinter ships with the standard CPython installer on Windows/macOS.
+# On Debian/Ubuntu Linux: sudo apt install python3-tk
