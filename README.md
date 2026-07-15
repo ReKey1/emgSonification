@@ -31,9 +31,11 @@ Source (serial | synthetic)
    |- EmgFilterChain      high-pass 20 Hz -> mains notch(es) -> low-pass 200 Hz -> envelope
         |- ProcessedSample
              |- live plot        (UI)
-             |- Recorder         (start/stop -> recordings/<timestamp>_<name>/)
+             |- Recorder         (start/stop -> recordings/<title>/<timestamp>_<notes>/)
              |- FeatureBank       (categorizers — pluggable, see below)
              |- Sonifier         (envelope -> pitch + loudness)
+
+recordings/  --(offline)-->  score_cli.py + emg/scoring.py  -->  scores.csv
 ```
 
 | File | Role |
@@ -42,12 +44,14 @@ Source (serial | synthetic)
 | `emg/config.py`     | All tunable settings (one dataclass, JSON-serialisable) |
 | `emg/streaming.py`  | Streaming IIR filter chain (SOS, stateful, low-latency) |
 | `emg/source.py`     | Serial source + synthetic generator (runs with no hardware) |
-| `emg/features.py`   | **Categorizer framework + stubs** (add qualities here) |
+| `emg/features.py`   | **Categorizer framework + stubs** (live, add qualities here) |
 | `emg/recorder.py`   | Thread-safe session recorder |
 | `emg/sonify.py`     | Real-time audio synthesis |
 | `emg/pipeline.py`   | Wires source -> filter -> sinks on a background thread |
+| `emg/scoring.py`    | **Offline dataset scorer** — research EMG metrics per recording |
 | `app.py`            | Tkinter UI |
 | `record_cli.py`     | Headless recorder |
+| `score_cli.py`      | Batch-score recordings into a clean `scores.csv` |
 
 ---
 
@@ -68,12 +72,16 @@ python app.py
 ```
 Pick *Serial* + your port (or *Synthetic* to try it with no hardware), choose 50/60 Hz,
 click **Connect**. You get a live plot (raw vs cleaned + envelope), a skin-contact
-indicator, **Start/Stop Recording**, and a sound toggle.
+indicator, a **live peak readout** (strongest-burst raw & filtered, co-located), a sound
+toggle, and **Start/Stop Recording**. With the *3·2·1 countdown tones* box ticked,
+Start plays three spaced tones and begins recording on the third (Mario-Kart style); untick
+it to start instantly.
 
-**Headless recording:**
+**Headless recording:** `--title` is the test subject (its directory); `--notes`
+names the dataset inside it.
 ```bash
-python record_cli.py --port COM7 --name bicep-curl --seconds 30 --notes "left arm"
-python record_cli.py --synthetic --seconds 5          # no hardware
+python record_cli.py --port COM7 --title alice --notes bicep-left --seconds 30
+python record_cli.py --synthetic --seconds 15 --title subject-01 --notes warmup  # no hardware
 python record_cli.py --port COM7 --mains 60           # western Japan
 ```
 
@@ -81,14 +89,60 @@ python record_cli.py --port COM7 --mains 60           # western Japan
 
 ## Recording format
 
+Recordings are grouped **one directory per test subject** (`--title`), with one
+dataset per recording (`--notes`) inside it:
+
 ```
-recordings/2026-07-07_143012_bicep-curl/
-   signal.csv     t, raw, filtered, envelope, detect, contact_ok   (per sample)
-   features.csv   t, <feature columns>                             (optional, per window)
-   session.json   full config snapshot + duration, sample count, notes
+recordings/
+   alice/                              <- title  (test subject)
+      2026-07-07_143012_bicep-left/    <- notes  (this dataset)
+         signal.csv     t, raw, filtered, envelope, detect, contact_ok   (per sample)
+         features.csv   t, <feature columns>                             (optional, per window)
+         session.json   config snapshot + title, notes, duration, sample count,
+                        and the strongest burst's peaks (peak_filtered, peak_raw, peak_t)
+      2026-07-07_145533_bicep-right/
+         ...
 ```
+Both `raw` and host-`filtered` EMG are stored every sample, so a session is fully
+self-contained — the scorer reads them directly and never has to re-derive. The
+saved peaks describe the strongest contraction: `peak_filtered` is the largest
+cleaned-signal excursion, `peak_raw` is the raw amplitude **at that same moment**
+(within ±50 ms of `peak_t`), so the two always refer to the same muscle burst rather
+than a stray raw spike the band-pass would remove.
 Raw is stored alongside the filtered signal, so any session can be re-filtered offline
 with different settings.
+
+---
+
+## Scoring recorded sessions
+
+`score_cli.py` reads every recording and writes one tidy row per dataset to a CSV of
+research-grounded single-channel EMG properties (implemented in `emg/scoring.py`; the
+literature basis and citations are in the module docstring and `../research`):
+
+```bash
+python score_cli.py                 # score ./recordings -> recordings/scores.csv
+python score_cli.py --refilter      # re-derive filtered/envelope from raw first
+python score_cli.py --mains 60      # override mains freq for notch/quality metrics
+```
+
+| Column | Property | Basis |
+|---|---|---|
+| `rms_amplitude`, `mav` | Activation level (RMS, mean-abs-value) | standard EMG amplitude features |
+| `baseline_noise`, `snr_db` | Rest noise floor + active-vs-rest SNR | required signal-quality gate |
+| `mains_residual` | Power left at mains + harmonics after notching | dry-PCB hum check |
+| `median_freq_hz` | Median power frequency | standard spectral descriptor |
+| `n_reps`, `rise_time_ms`, `onset_sharpness` | Contraction count + onset rise time | sharper onset tracks skill |
+| `inter_rep_consistency` | `1 - mean(CV of per-rep envelope)` | thesis's recommended primary reward |
+| `contact_frac` | Fraction of samples with good contact | data-quality gate |
+| `quality_score` | Composite 0–1 **signal-integrity** gate | transparent, reconfigurable |
+
+Cells are left blank when a metric can't be computed (e.g. `inter_rep_consistency`
+needs ≥2 detected reps). The motor-learning metrics are reported raw, not baked into a
+single verdict — which of them best predicts learning is exactly the open question the
+thesis is investigating, so `quality_score` gates only on *signal cleanliness*
+(SNR / mains / contact). Add a metric by registering a `Scorer` in `emg/scoring.py`.
+Co-contraction and recruitment specificity need a 2nd channel and are deferred.
 
 ---
 

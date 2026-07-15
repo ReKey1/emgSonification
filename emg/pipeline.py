@@ -21,6 +21,7 @@ import numpy as np
 
 from .config import Config
 from .features import FeatureBank, build_feature_bank
+from .peaks import PeakTracker
 from .recorder import Recorder
 from .streaming import EmgFilterChain, build_chain
 from .source import Source
@@ -43,6 +44,7 @@ class Pipeline:
         self._penv: Deque[float] = deque(maxlen=n)
 
         # shared/live state
+        self._peaks = PeakTracker(cfg.sample_rate)  # live raw/filtered burst peaks (UI readout)
         self._audio_level = 0.0
         self._contact_ok = False
         self._last_detect: Optional[float] = None
@@ -83,6 +85,7 @@ class Pipeline:
         with self._chain_lock:
             self._chain = build_chain(cfg)
         self.features = build_feature_bank(cfg)
+        self._peaks = PeakTracker(cfg.sample_rate)
 
     # ---- run loop ---------------------------------------------------- #
     def _run(self) -> None:
@@ -116,6 +119,7 @@ class Pipeline:
         self._pfilt.append(ps.filtered)
         self._penv.append(ps.envelope)
 
+        self._peaks.update(ps.raw, ps.filtered, ps.t)
         self._audio_level = ps.envelope / self.cfg.envelope_full_scale
         self._contact_ok = ps.contact_ok
         self._last_detect = ps.detect
@@ -148,6 +152,18 @@ class Pipeline:
         return self._contact_ok
 
     @property
+    def peak_raw(self) -> float:
+        return self._peaks.peak_raw
+
+    @property
+    def peak_filtered(self) -> float:
+        return self._peaks.peak_filtered
+
+    def reset_peaks(self) -> None:
+        """Clear the live peak readout (e.g. when starting a fresh take)."""
+        self._peaks.reset()
+
+    @property
     def samples_seen(self) -> int:
         return self._count
 
@@ -175,8 +191,9 @@ class Pipeline:
         return t, raw, filt, env
 
     # ---- recording delegation --------------------------------------- #
-    def start_recording(self, name: str, notes: str = ""):
-        return self.recorder.start(name, notes)
+    def start_recording(self, title: str, notes: str = ""):
+        self._peaks.reset()  # so the live readout tracks this take from zero
+        return self.recorder.start(title, notes)
 
     def stop_recording(self):
         return self.recorder.stop()

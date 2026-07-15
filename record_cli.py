@@ -1,8 +1,11 @@
 """Headless recorder — record a session without the GUI.
 
+A recording is stored per test subject: `--title` names the subject's directory
+and `--notes` names the dataset inside it:  recordings/<title>/<stamp>_<notes>/
+
 Examples:
-    python record_cli.py --synthetic --seconds 5 --name test
-    python record_cli.py --port COM7 --name bicep-curl --notes "left arm"
+    python record_cli.py --synthetic --seconds 5 --title subject-01 --notes warmup
+    python record_cli.py --port COM7 --title alice --notes bicep-left --seconds 30
     python record_cli.py --port COM7 --mains 60          # western Japan
 
 Handy for quick captures, for scripting, and for smoke-testing the pipeline on
@@ -25,8 +28,9 @@ def main() -> int:
     ap.add_argument("--synthetic", action="store_true", help="use the built-in fake source")
     ap.add_argument("--port", help="serial port (e.g. COM7)")
     ap.add_argument("--seconds", type=float, default=10.0, help="recording length")
-    ap.add_argument("--name", default="session", help="session name (folder suffix)")
-    ap.add_argument("--notes", default="", help="free-text notes stored in session.json")
+    ap.add_argument("--title", "--subject", "--name", dest="title", default="subject",
+                    help="test subject — becomes the per-subject directory")
+    ap.add_argument("--notes", default="", help="dataset name — the recording folder inside <title>/")
     ap.add_argument("--mains", type=float, help="mains frequency: 50 (E. Japan) or 60 (W. Japan)")
     args = ap.parse_args()
 
@@ -47,7 +51,7 @@ def main() -> int:
 
     pipe = Pipeline(cfg)
     pipe.start(source)
-    session = pipe.start_recording(args.name, args.notes)
+    session = pipe.start_recording(args.title, args.notes)
     print(f"Recording [{source.name}] -> {session}")
     print(f"Notch: {cfg.notch_freqs()} Hz | high-pass {cfg.highpass_hz} Hz | "
           f"low-pass {cfg.lowpass_hz} Hz")

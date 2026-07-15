@@ -22,6 +22,28 @@ from .config import Config
 LevelFn = Callable[[], float]  # returns current activation in [0, 1]
 
 
+def beep(frequency: float, duration_s: float = 0.15,
+         samplerate: int = 44100, amplitude: float = 0.3) -> bool:
+    """Play one short tone, non-blocking. Returns False if audio is unavailable.
+
+    Used for the record-countdown cue. Fires and forgets via sounddevice.play, so
+    it never stalls the UI; a missing device just makes it a silent no-op.
+    """
+    try:
+        import sounddevice as sd
+        n = max(1, int(samplerate * duration_s))
+        t = np.arange(n, dtype=np.float64) / samplerate
+        wave = amplitude * np.sin(2.0 * math.pi * frequency * t)
+        fade = min(n // 2, int(samplerate * 0.008))  # ~8 ms ramps kill clicks
+        if fade > 0:
+            wave[:fade] *= np.linspace(0.0, 1.0, fade)
+            wave[-fade:] *= np.linspace(1.0, 0.0, fade)
+        sd.play(wave.astype(np.float32), samplerate)
+        return True
+    except Exception:
+        return False
+
+
 class Sonifier:
     def __init__(self, cfg: Config, level_fn: LevelFn):
         self.cfg = cfg

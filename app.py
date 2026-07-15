@@ -5,7 +5,7 @@ A small control panel for the sensor:
     * Pick mains frequency  — 50 Hz eastern Japan / 60 Hz western Japan.
     * Watch the live signal (raw vs cleaned) and the envelope.
     * See skin-contact status  — important for the dry PCB pads.
-    * Start / Stop a recording, saved into recordings/<timestamp>_<name>/.
+    * Start / Stop a recording, saved into recordings/<title>/<timestamp>_<notes>/.
     * Toggle sonification on/off.
     * Live feature panel (shows the categorizer framework running).
 
@@ -32,7 +32,7 @@ except Exception as e:  # pragma: no cover
 
 from emg.config import Config
 from emg.pipeline import Pipeline
-from emg.sonify import Sonifier
+from emg.sonify import Sonifier, beep
 from emg.source import open_source
 
 REFRESH_MS = 33  # ~30 fps
@@ -50,6 +50,8 @@ class EmgApp(tk.Tk):
         self.pipeline = Pipeline(self.cfg)
         self.sonifier: Sonifier | None = None
         self._rec_t0 = 0.0
+        self._counting = False              # a record countdown is in progress
+        self._countdown_jobs: list[str] = []  # pending `after` ids, so we can cancel
 
         self._build_widgets()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -100,22 +102,34 @@ class EmgApp(tk.Tk):
         # --- Recording ---
         rec = ttk.LabelFrame(p, text="Recording", padding=8)
         rec.pack(fill="x", pady=(8, 0))
-        ttk.Label(rec, text="Name:").grid(row=0, column=0, sticky="w")
-        self.var_name = tk.StringVar(value="session")
-        ttk.Entry(rec, textvariable=self.var_name, width=16).grid(row=0, column=1, sticky="ew")
-        ttk.Label(rec, text="Notes:").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Label(rec, text="Subject:").grid(row=0, column=0, sticky="w")
+        self.var_title = tk.StringVar(value="subject")
+        ttk.Entry(rec, textvariable=self.var_title, width=16).grid(row=0, column=1, sticky="ew")
+        ttk.Label(rec, text="Dataset:").grid(row=1, column=0, sticky="w", pady=(4, 0))
         self.var_notes = tk.StringVar()
         ttk.Entry(rec, textvariable=self.var_notes, width=16).grid(
             row=1, column=1, sticky="ew", pady=(4, 0))
         rec.columnconfigure(1, weight=1)
+        self.var_countdown = tk.BooleanVar(value=True)
+        ttk.Checkbutton(rec, text="3·2·1 countdown tones", variable=self.var_countdown).grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
         self.btn_rec = ttk.Button(rec, text="● Start Recording",
                                   command=self._toggle_record, state="disabled")
-        self.btn_rec.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self.btn_rec.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         self.lbl_rec = ttk.Label(rec, text="not recording", foreground="gray")
-        self.lbl_rec.grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.lbl_rec.grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 0))
         ttk.Button(rec, text="Open recordings folder",
-                   command=self._open_folder).grid(row=4, column=0, columnspan=2,
+                   command=self._open_folder).grid(row=5, column=0, columnspan=2,
                                                     sticky="ew", pady=(4, 0))
+
+        # --- Live signal peaks (strongest burst so far) ---
+        pk = ttk.LabelFrame(p, text="Signal peaks (live)", padding=8)
+        pk.pack(fill="x", pady=(8, 0))
+        self.lbl_peaks = ttk.Label(pk, text="raw   —\nfiltered   —",
+                                   justify="left", font=("TkFixedFont", 9))
+        self.lbl_peaks.pack(anchor="w")
+        ttk.Label(pk, text="raw & filtered from the same burst; resets on record",
+                  foreground="gray", font=("TkDefaultFont", 8)).pack(anchor="w", pady=(2, 0))
 
         # --- Sonification ---
         son = ttk.LabelFrame(p, text="Sonification", padding=8)
@@ -193,25 +207,64 @@ class EmgApp(tk.Tk):
         self.btn_rec.config(state="normal")
 
     def _disconnect(self) -> None:
+        self._cancel_countdown()
         if self.pipeline.is_recording:
-            self._toggle_record()
+            self._stop_record()
         self.pipeline.stop()
         self.btn_conn.config(text="Connect")
         self.btn_rec.config(state="disabled")
 
     def _toggle_record(self) -> None:
         if self.pipeline.is_recording:
-            path = self.pipeline.stop_recording()
-            self.btn_rec.config(text="● Start Recording")
-            self.lbl_rec.config(text=f"saved: {os.path.basename(path)}", foreground="gray")
+            self._stop_record()
+            return
+        if self._counting:
+            return  # countdown already running — ignore extra clicks
+        if not self.pipeline.running:
+            messagebox.showwarning("Not connected", "Connect to a source first.")
+            return
+        if self.var_countdown.get():
+            self._begin_countdown()
         else:
-            if not self.pipeline.running:
-                messagebox.showwarning("Not connected", "Connect to a source first.")
-                return
-            path = self.pipeline.start_recording(self.var_name.get(), self.var_notes.get())
-            self._rec_t0 = time.time()
-            self.btn_rec.config(text="■ Stop Recording")
-            self.lbl_rec.config(text=f"→ {os.path.basename(path)}", foreground="#d62728")
+            self._begin_record()
+
+    def _begin_countdown(self) -> None:
+        """Play three spaced tones; recording starts on the third (Mario-Kart style)."""
+        self._counting = True
+        self.btn_rec.config(state="disabled")
+        self._countdown(3)
+
+    def _countdown(self, n: int) -> None:
+        go = n <= 1  # the third (last) tone is the higher "go" — recording starts on it
+        beep(880.0 if go else 587.0, 0.18)
+        if go:
+            self._counting = False
+            self._countdown_jobs.clear()
+            self.btn_rec.config(state="normal")
+            self._begin_record()
+            return
+        self.lbl_rec.config(text=f"●  {n}…", foreground="#d68a00")
+        self._countdown_jobs.append(self.after(1000, lambda: self._countdown(n - 1)))
+
+    def _begin_record(self) -> None:
+        path = self.pipeline.start_recording(self.var_title.get(), self.var_notes.get())
+        self._rec_t0 = time.time()
+        self.btn_rec.config(text="■ Stop Recording")
+        self.lbl_rec.config(text=f"→ {os.path.basename(path)}", foreground="#d62728")
+
+    def _stop_record(self) -> None:
+        path = self.pipeline.stop_recording()
+        self.btn_rec.config(text="● Start Recording")
+        self.lbl_rec.config(text=f"saved: {os.path.basename(path)}", foreground="gray")
+
+    def _cancel_countdown(self) -> None:
+        for job in self._countdown_jobs:
+            try:
+                self.after_cancel(job)
+            except Exception:
+                pass
+        self._countdown_jobs.clear()
+        self._counting = False
 
     def _toggle_audio(self) -> None:
         if self.var_audio.get():
@@ -285,6 +338,12 @@ class EmgApp(tk.Tk):
         self.contact_dot.itemconfig(self._dot, fill="#2ca02c" if ok else "#d62728")
         self.lbl_contact.config(text="contact OK" if ok else "contact POOR / off")
 
+        if p.running:
+            self.lbl_peaks.config(
+                text=f"raw   {p.peak_raw:8.1f}\nfiltered   {p.peak_filtered:8.2f}")
+        else:
+            self.lbl_peaks.config(text="raw   —\nfiltered   —")
+
         if p.is_recording:
             self.lbl_rec.config(
                 text=f"● REC {time.time() - self._rec_t0:5.1f}s "
@@ -300,6 +359,7 @@ class EmgApp(tk.Tk):
 
     def _on_close(self) -> None:
         try:
+            self._cancel_countdown()
             if self.sonifier:
                 self.sonifier.stop()
             self.pipeline.stop()

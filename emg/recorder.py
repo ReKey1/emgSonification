@@ -4,12 +4,15 @@ start() opens a new timestamped session folder and streams samples into it on a
 background writer thread (so disk I/O never stalls acquisition). stop() flushes
 and finalises a JSON sidecar with the full config and session stats.
 
-Layout:
+Layout — one directory per test subject (`title`), one dataset per recording
+(`notes`) inside it:
     recordings/
-        2026-07-07_143012_bicep-curl/
-            signal.csv     per-sample: t,raw,filtered,envelope,detect,contact_ok
-            features.csv   optional per-window feature snapshots
-            session.json   config snapshot + metadata (duration, n_samples, notes)
+        subject-01/                        <- title  (the test subject)
+            2026-07-07_143012_bicep-left/  <- notes  (this dataset)
+                signal.csv     per-sample: t,raw,filtered,envelope,detect,contact_ok
+                features.csv   optional per-window feature snapshots
+                session.json   config snapshot + metadata (title, notes, duration,
+                               co-located raw/filtered burst peaks, ...)
 """
 
 from __future__ import annotations
@@ -25,15 +28,16 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from .config import Config
+from .peaks import PeakTracker
 from .types import FeatureResult, ProcessedSample
 
 _SIGNAL_HEADER = ["t", "raw", "filtered", "envelope", "detect", "contact_ok"]
 
 
-def _slug(text: str) -> str:
+def _slug(text: str, fallback: str = "session") -> str:
     text = text.strip().lower()
     text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
-    return text or "session"
+    return text or fallback
 
 
 class Recorder:
@@ -50,7 +54,8 @@ class Recorder:
         self._n = 0
         self._t0 = 0.0
         self._notes = ""
-        self._name = ""
+        self._title = ""
+        self._peaks = PeakTracker(cfg.sample_rate)  # strongest-burst raw/filtered peaks
         self._feature_file = None
         self._feature_writer = None
         self._feature_cols: Optional[list] = None
@@ -69,17 +74,24 @@ class Recorder:
         return self._n
 
     # -- control ------------------------------------------------------- #
-    def start(self, name: str = "session", notes: str = "") -> Path:
+    def start(self, title: str = "subject", notes: str = "") -> Path:
+        """Open a new dataset for a subject.
+
+        `title` names the per-subject directory; `notes` names the dataset folder
+        (timestamp-prefixed) inside it. Multiple datasets for the same subject
+        share one `title` directory:  recordings/<title>/<stamp>_<notes>/
+        """
         with self._lock:
             if self._recording:
                 raise RuntimeError("already recording")
             stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-            self._name = name
-            self._dir = self._base / f"{stamp}_{_slug(name)}"
+            self._title = title
+            self._dir = self._base / _slug(title, "subject") / f"{stamp}_{_slug(notes, 'dataset')}"
             self._dir.mkdir(parents=True, exist_ok=True)
             self._notes = notes
             self._n = 0
             self._t0 = time.time()
+            self._peaks = PeakTracker(self.cfg.sample_rate)
 
             self._queue = queue.Queue()
             self._recording = True
@@ -132,6 +144,7 @@ class Recorder:
                 item = self._queue.get()
                 if item is None:
                     break
+                self._peaks.update(item.raw, item.filtered, item.t)
                 w.writerow([
                     f"{item.t:.4f}",
                     f"{item.raw:.3f}",
@@ -146,11 +159,16 @@ class Recorder:
         if self._dir is None:
             return
         meta = {
-            "name": self._name,
-            "notes": self._notes,
+            "title": self._title,      # test subject (parent directory)
+            "notes": self._notes,      # dataset name (this recording folder)
             "started": datetime.fromtimestamp(self._t0).isoformat(timespec="seconds"),
             "duration_s": round(time.time() - self._t0, 3),
             "n_samples": self._n,
+            # Peaks of the strongest burst. peak_raw is measured next to peak_filtered
+            # (at peak_t) so both point to the same muscle event — see emg/peaks.py.
+            "peak_filtered": round(self._peaks.peak_filtered, 4),
+            "peak_raw": round(self._peaks.peak_raw, 3),
+            "peak_t": round(self._peaks.peak_filtered_t, 4),
             "sample_rate": self.cfg.sample_rate,
             "mains_hz": self.cfg.mains_hz,
             "config": self.cfg.to_dict(),
