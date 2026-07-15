@@ -80,6 +80,33 @@ META_COLUMNS: Tuple[str, ...] = (
 )
 SCORE_COLUMN = "quality_score"
 
+# Human-readable CSV headers with units. Internal column keys (above and in each
+# Scorer) stay unit-less so the code is unaffected; these labels are applied only
+# when the header row is written. Amplitude columns are in raw ADC counts (the
+# signal is uncalibrated 10-bit ADC, adc_max=1023 — no µV conversion). Columns not
+# listed fall back to their bare key.
+COLUMN_LABELS: Dict[str, str] = {
+    "duration_s": "duration (s)",
+    "sample_rate": "sample_rate (Hz)",
+    "mains_hz": "mains (Hz)",
+    "rms_amplitude": "rms_amplitude (counts)",
+    "mav": "mav (counts)",
+    "baseline_noise": "baseline_noise (counts)",
+    "snr_db": "snr (dB)",
+    "mains_residual": "mains_residual (frac)",
+    "median_freq_hz": "median_freq (Hz)",
+    "rise_time_ms": "rise_time (ms)",
+    "onset_sharpness": "onset_sharpness (1/s)",
+    "inter_rep_consistency": "inter_rep_consistency (0-1)",
+    "contact_frac": "contact (frac)",
+    "quality_score": "quality_score (0-1)",
+}
+
+
+def header_labels() -> List[str]:
+    """CSV header row: every column labelled with its unit where it has one."""
+    return [COLUMN_LABELS.get(c, c) for c in all_columns()]
+
 
 # --------------------------------------------------------------------------- #
 #  Burst / rep segmentation (shared by several scorers)
@@ -595,7 +622,7 @@ def write_csv(rows: List[Dict[str, object]], out_path: Path) -> Path:
     columns = all_columns()
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow(columns)
+        writer.writerow(header_labels())  # unit-annotated headers; data keyed by `columns`
         for row in rows:
             writer.writerow([_fmt(row.get(col)) for col in columns])
     return out_path

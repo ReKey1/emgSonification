@@ -74,8 +74,11 @@ Pick *Serial* + your port (or *Synthetic* to try it with no hardware), choose 50
 click **Connect**. You get a live plot (raw vs cleaned + envelope), a skin-contact
 indicator, a **live peak readout** (strongest-burst raw & filtered, co-located), a sound
 toggle, and **Start/Stop Recording**. With the *3·2·1 countdown tones* box ticked,
-Start plays three spaced tones and begins recording on the third (Mario-Kart style); untick
-it to start instantly.
+Start plays three spaced tones: recording begins on the **second** tone (so no pre-movement
+data is lost) and the **third** tone is the "go" cue to start the movement. The go moment is
+logged to `session.json` as `movement_onset_t` (matches the `t` column) / `movement_onset_s`,
+so you can mark exactly where the movement began. Untick the box to start instantly. The gap
+between tones is `COUNTDOWN_INTERVAL_MS` in `app.py` (default 1000 ms).
 
 **Headless recording:** `--title` is the test subject (its directory); `--notes`
 names the dataset inside it.
@@ -99,7 +102,8 @@ recordings/
          signal.csv     t, raw, filtered, envelope, detect, contact_ok   (per sample)
          features.csv   t, <feature columns>                             (optional, per window)
          session.json   config snapshot + title, notes, duration, sample count,
-                        and the strongest burst's peaks (peak_filtered, peak_raw, peak_t)
+                        the strongest burst's peaks (peak_filtered, peak_raw, peak_t),
+                        and the movement cue (movement_onset_t / movement_onset_s)
       2026-07-07_145533_bicep-right/
          ...
 ```
@@ -136,6 +140,9 @@ python score_cli.py --mains 60      # override mains freq for notch/quality metr
 | `inter_rep_consistency` | `1 - mean(CV of per-rep envelope)` | thesis's recommended primary reward |
 | `contact_frac` | Fraction of samples with good contact | data-quality gate |
 | `quality_score` | Composite 0–1 **signal-integrity** gate | transparent, reconfigurable |
+
+The CSV headers carry units, e.g. `snr (dB)`, `rms_amplitude (counts)`, `median_freq (Hz)`,
+`onset_sharpness (1/s)` (amplitudes are raw ADC counts — the signal is uncalibrated).
 
 Cells are left blank when a metric can't be computed (e.g. `inter_rep_consistency`
 needs ≥2 detected reps). The motor-learning metrics are reported raw, not baked into a

@@ -195,6 +195,10 @@ class Pipeline:
         self._peaks.reset()  # so the live readout tracks this take from zero
         return self.recorder.start(title, notes)
 
+    def mark_movement(self) -> None:
+        """Flag the current data-clock time as the movement onset (see Recorder)."""
+        self.recorder.mark_movement()
+
     def stop_recording(self):
         return self.recorder.stop()
 

@@ -36,6 +36,7 @@ from emg.sonify import Sonifier, beep
 from emg.source import open_source
 
 REFRESH_MS = 33  # ~30 fps
+COUNTDOWN_INTERVAL_MS = 1000  # gap between countdown beeps (rec starts on 2nd, move on 3rd)
 
 
 class EmgApp(tk.Tk):
@@ -229,30 +230,36 @@ class EmgApp(tk.Tk):
             self._begin_record()
 
     def _begin_countdown(self) -> None:
-        """Play three spaced tones; recording starts on the third (Mario-Kart style)."""
+        """Three tones: recording starts on the 2nd; the 3rd (go) cues the movement."""
         self._counting = True
         self.btn_rec.config(state="disabled")
         self._countdown(3)
 
     def _countdown(self, n: int) -> None:
-        go = n <= 1  # the third (last) tone is the higher "go" — recording starts on it
+        go = n <= 1  # the third/last tone is the higher "go" — start the movement here
         beep(880.0 if go else 587.0, 0.18)
+        if n == 2:
+            # Recording begins on the 2nd beep — one tone before the movement — so
+            # the first data points aren't lost. Beep 3 (go) is when they move.
+            self._begin_record()
         if go:
+            self.pipeline.mark_movement()  # stamp the movement cue into session.json
             self._counting = False
             self._countdown_jobs.clear()
-            self.btn_rec.config(state="normal")
-            self._begin_record()
             return
-        self.lbl_rec.config(text=f"●  {n}…", foreground="#d68a00")
-        self._countdown_jobs.append(self.after(1000, lambda: self._countdown(n - 1)))
+        if n == 3:
+            self.lbl_rec.config(text="●  get set…", foreground="#d68a00")
+        self._countdown_jobs.append(
+            self.after(COUNTDOWN_INTERVAL_MS, lambda: self._countdown(n - 1)))
 
     def _begin_record(self) -> None:
+        self.btn_rec.config(state="normal", text="■ Stop Recording")
         path = self.pipeline.start_recording(self.var_title.get(), self.var_notes.get())
         self._rec_t0 = time.time()
-        self.btn_rec.config(text="■ Stop Recording")
         self.lbl_rec.config(text=f"→ {os.path.basename(path)}", foreground="#d62728")
 
     def _stop_record(self) -> None:
+        self._cancel_countdown()  # drop any pending "go" beep if stopped early
         path = self.pipeline.stop_recording()
         self.btn_rec.config(text="● Start Recording")
         self.lbl_rec.config(text=f"saved: {os.path.basename(path)}", foreground="gray")

@@ -56,6 +56,9 @@ class Recorder:
         self._notes = ""
         self._title = ""
         self._peaks = PeakTracker(cfg.sample_rate)  # strongest-burst raw/filtered peaks
+        self._t_first = 0.0            # data-clock `t` of the first sample written
+        self._t_last = 0.0            # data-clock `t` of the most recent sample
+        self._movement_t: Optional[float] = None  # `t` at which the movement was cued
         self._feature_file = None
         self._feature_writer = None
         self._feature_cols: Optional[list] = None
@@ -92,6 +95,9 @@ class Recorder:
             self._n = 0
             self._t0 = time.time()
             self._peaks = PeakTracker(self.cfg.sample_rate)
+            self._t_first = 0.0
+            self._t_last = 0.0
+            self._movement_t = None
 
             self._queue = queue.Queue()
             self._recording = True
@@ -105,6 +111,16 @@ class Recorder:
         """Non-blocking; ignored when not recording."""
         if self._recording:
             self._queue.put(s)
+
+    def mark_movement(self) -> None:
+        """Stamp the movement cue against the data clock.
+
+        Records the most recent sample's `t`, so a caller (e.g. the UI's countdown
+        'go' beep) can flag the exact moment the movement was cued. Saved to
+        session.json as movement_onset_t / movement_onset_s. No-op when not recording.
+        """
+        if self._recording:
+            self._movement_t = self._t_last
 
     def push_features(self, t: float, results: Dict[str, FeatureResult]) -> None:
         """Optional low-rate feature snapshot logging."""
@@ -144,6 +160,9 @@ class Recorder:
                 item = self._queue.get()
                 if item is None:
                     break
+                if self._n == 0:
+                    self._t_first = item.t
+                self._t_last = item.t
                 self._peaks.update(item.raw, item.filtered, item.t)
                 w.writerow([
                     f"{item.t:.4f}",
@@ -164,6 +183,11 @@ class Recorder:
             "started": datetime.fromtimestamp(self._t0).isoformat(timespec="seconds"),
             "duration_s": round(time.time() - self._t0, 3),
             "n_samples": self._n,
+            # When the movement was cued (null if it wasn't). movement_onset_t matches
+            # the signal.csv `t` column; movement_onset_s is seconds into the recording.
+            "movement_onset_t": None if self._movement_t is None else round(self._movement_t, 4),
+            "movement_onset_s": (None if self._movement_t is None
+                                 else round(self._movement_t - self._t_first, 4)),
             # Peaks of the strongest burst. peak_raw is measured next to peak_filtered
             # (at peak_t) so both point to the same muscle event — see emg/peaks.py.
             "peak_filtered": round(self._peaks.peak_filtered, 4),
