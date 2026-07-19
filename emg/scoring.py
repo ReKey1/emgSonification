@@ -1,96 +1,126 @@
-"""Offline dataset scoring — turn a recorded session into research-grounded numbers.
+"""Offline scoring — turn recorded sessions into research-grounded numbers.
 
     >>> This *is* implemented, unlike the live categorizers in features.py. Those
     >>> stay stubs because *which quality to sonify in real time* is an open thesis
     >>> question. Here we do post-hoc analysis of finished recordings, where the
     >>> established EMG metrics are well defined and worth computing verbatim.
 
-Given one recording folder (a `signal.csv` + optional `session.json`), we compute
-a row of single-channel surface-EMG properties drawn from the thesis literature
-(`../research`), then `score_cli.py` collects one row per dataset into a clean CSV.
+RECORDING MODEL (important — the scorer's whole shape follows from it)
+--------------------------------------------------------------------------
+Each subject directory holds:
+
+    recordings/<subject>/
+        <stamp>_amp/            <- MVC test: one sustained maximal contraction
+        <stamp>_overheadfast/   <- one REP of the "overheadfast" movement
+        <stamp>_overheadfast/   <- another rep of the same movement
+        ... (~6 reps per movement category) ...
+        <stamp>_point/          <- reps of another category ...
+
+So **one folder = one rep**, and the reps of a movement are *grouped by category*
+(the folder-name suffix after the timestamp). The unit of analysis is therefore
+the **category** (a group of ~6 rep files), not the individual file. We report:
+
+    scores.csv   one row per (subject, category): the reps aggregated
+    reps.csv     one row per individual rep file (drill-down)
+
+The `amp` recording is the subject's **MVC reference**, not a scored category. Its
+maximum drives %MVC normalisation. To avoid a lone sensor-shift spike defining
+100%, the reference is a *robust* max — a high percentile (99th) of the amp
+contraction's envelope (`robust_max`), which discards the top ~1% of samples where
+a shift artefact would land while still reflecting the true attainable peak. Rep
+envelopes are then clipped only well above MVC (`SPIKE_TRIM_FACTOR` × MVC) so that
+gross shift artefacts are removed but normal dynamic overshoot (a fast rep can beat
+an isometric hold) is preserved — %MVC is therefore not capped at 100 (`score_rep`).
 
 Metrics and their evidence base (citations resolve in ../research/references.md):
 
-    amplitude
-        rms_amplitude, mav  — standard EMG activation-level features (RMS, mean
-        absolute value). The raw material of the "Amplitude" sonification condition
-        (semester_plan.md).
-    snr
-        baseline_noise, snr_db — active-vs-rest signal-to-noise. The research makes
-        a signal-quality gate a *hard requirement*: reps whose SNR/baseline noise is
-        too poor must be excluded so the system never adapts to electrode artifact
-        (literature_review.md §9, Argument 4).
-    mains
-        mains_residual — fraction of power left at the mains frequency + harmonics
-        after host notching. Sensor-specific: the dry PCB pads pick up a lot of
-        50/60 Hz hum, which is the whole reason host filtering exists.
-    spectral
-        median_freq_hz — median power frequency; a standard spectral EMG descriptor
-        (established for fatigue; a weaker skill discriminator — semester_plan.md).
-    onset
-        n_reps, rise_time_ms, onset_sharpness — contraction count and rise time from
-        onset to peak. Sharper onsets track skill acquisition [R27], [R28].
-    consistency
-        inter_rep_consistency = 1 - mean(CV of the per-rep envelope profile). The
-        thesis's recommended primary reward: lower inter-rep variability = a more
-        stable motor program [R19]-[R22].
-    contact
-        contact_frac — fraction of samples the wear/contact flag reported good.
+    amplitude   rms_amplitude, mav — activation level (RMS, mean-abs-value) of the
+                cleaned signal over the rep. peak — envelope peak. mean_pct_mvc /
+                peak_pct_mvc — the same expressed as %MVC (comparable across
+                subjects), the raw material of the "Amplitude" condition.
+    snr         baseline_noise, snr_db — rest-vs-active signal-to-noise. The
+                research makes a signal-quality gate a hard requirement so the
+                system never adapts to electrode artefact (lit. review §9, Arg 4).
+    mains       mains_residual — fraction of power left at mains + harmonics after
+                host notching. The dry PCB pads pick up a lot of 50/60 Hz hum.
+    spectral    median_freq_hz — median power frequency (a standard descriptor).
+    onset       rise_time_ms, onset_sharpness — rise from rep onset to peak.
+                Sharper onsets track skill acquisition [R27],[R28].
+    consistency inter_rep_consistency = 1 - mean(CV across the reps' time-normalised
+                envelope profiles). Computed ACROSS the category's rep files (the
+                whole point of grouping) — the thesis's recommended primary reward:
+                lower inter-rep variability = a more stable motor program [R19]-[R22].
+    contact     contact_frac — fraction of samples the wear/contact flag reported OK.
 
-Multichannel metrics from the research — co-contraction [R23]-[R26] and recruitment
-specificity — need a second electrode and are deliberately left out here (they are
-deferred in semester_plan.md too). Add them as Scorers when 2-channel data exists.
+Multichannel metrics (co-contraction [R23]-[R26], recruitment specificity) need a
+second electrode and are deliberately left out (deferred in semester_plan.md too).
 
 --------------------------------------------------------------------------
 HOW TO ADD A METRIC
 --------------------------------------------------------------------------
-1. Subclass Scorer, set `name` and the `columns` tuple it emits.
-2. Implement compute(ctx) -> {column: value_or_None}; read ctx.filtered /
-   ctx.envelope (numpy arrays) and ctx.reps() (cached burst segmentation).
-3. Decorate with @register_scorer. score_dataset() picks it up automatically and
-   its columns append to the CSV. Return None for "not computable on this data"
-   (e.g. too few reps) — the CSV leaves that cell blank rather than guessing.
-
-The composite `quality_score` is NOT a Scorer: it is a transparent, reconfigurable
-signal-quality gate over the metrics above (see QualityWeights / composite_quality).
-The motor-learning metrics are reported raw, never baked into a single verdict —
-which of them best predicts learning is exactly what the thesis is trying to find out.
+Per-rep metrics live in `score_rep()` — add a key to the returned dict and to
+REP_METRIC_COLUMNS; it will flow into reps.csv and, via the mean in
+`aggregate_category()`, into scores.csv automatically. A metric that only makes
+sense across reps (like consistency) is computed in `aggregate_category()` from the
+collected profiles. The composite `quality_score` is a transparent, reconfigurable
+signal-quality gate over the aggregated metrics (QualityWeights / composite_quality)
+— the motor-learning metrics are reported raw, never baked into one verdict.
 """
 
 from __future__ import annotations
 
-import abc
 import csv
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from scipy import signal
 
 from .config import Config
 
-# Column order for the output CSV. Identity/metadata first, then metrics grouped
-# as quality-gate -> amplitude -> spectral -> temporal/learning, then the score.
-META_COLUMNS: Tuple[str, ...] = (
-    "subject", "dataset", "started", "duration_s", "n_samples",
-    "sample_rate", "mains_hz",
-)
+# --------------------------------------------------------------------------- #
+#  Columns  (internal keys are unit-less; labels below add units for the CSV)
+# --------------------------------------------------------------------------- #
 SCORE_COLUMN = "quality_score"
 
-# Human-readable CSV headers with units. Internal column keys (above and in each
-# Scorer) stay unit-less so the code is unaffected; these labels are applied only
-# when the header row is written. Amplitude columns are in raw ADC counts (the
-# signal is uncalibrated 10-bit ADC, adc_max=1023 — no µV conversion). Columns not
-# listed fall back to their bare key.
+# Per-rep metric keys, produced by score_rep(). Category rows carry the mean of
+# each of these (plus the cross-rep extras) — keep the two in sync.
+REP_METRIC_COLUMNS: Tuple[str, ...] = (
+    "peak_pct_mvc", "mean_pct_mvc",
+    "rms_amplitude", "mav", "peak",
+    "baseline_noise", "snr_db", "mains_residual", "median_freq_hz",
+    "rise_time_ms", "onset_sharpness", "contact_frac",
+)
+# Metrics that only exist at the category level (computed across the reps).
+CATEGORY_EXTRA_COLUMNS: Tuple[str, ...] = ("inter_rep_consistency",)
+
+REP_COLUMNS: Tuple[str, ...] = (
+    "subject", "category", "rep", "started",
+    "duration_s", "n_samples", "sample_rate", "mains_hz",
+    *REP_METRIC_COLUMNS,
+)
+CATEGORY_COLUMNS: Tuple[str, ...] = (
+    "subject", "category", "n_reps", "mvc_reference",
+    *REP_METRIC_COLUMNS, *CATEGORY_EXTRA_COLUMNS, SCORE_COLUMN,
+)
+
+# Human-readable CSV headers with units. Amplitude columns are raw ADC counts (the
+# signal is uncalibrated 10-bit ADC, adc_max=1023 — no µV conversion); %MVC columns
+# are normalised to the subject's MVC. Columns not listed fall back to their key.
 COLUMN_LABELS: Dict[str, str] = {
     "duration_s": "duration (s)",
     "sample_rate": "sample_rate (Hz)",
     "mains_hz": "mains (Hz)",
+    "mvc_reference": "MVC ref (counts)",
+    "peak_pct_mvc": "peak (%MVC)",
+    "mean_pct_mvc": "mean (%MVC)",
     "rms_amplitude": "rms_amplitude (counts)",
     "mav": "mav (counts)",
+    "peak": "peak (counts)",
     "baseline_noise": "baseline_noise (counts)",
     "snr_db": "snr (dB)",
     "mains_residual": "mains_residual (frac)",
@@ -102,14 +132,23 @@ COLUMN_LABELS: Dict[str, str] = {
     "quality_score": "quality_score (0-1)",
 }
 
+TIME_NORM_LEN = 100     # samples in a time-normalised rep envelope profile
+MVC_PERCENTILE = 99.0   # percentile of the amp contraction taken as 100% MVC
+SPIKE_TRIM_FACTOR = 1.5  # clip rep envelopes above this × MVC (shift artefacts)
+AMP_CATEGORY = "amp"    # the MVC-reference folder name (not a scored category)
+_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{6}_")
 
-def header_labels() -> List[str]:
-    """CSV header row: every column labelled with its unit where it has one."""
-    return [COLUMN_LABELS.get(c, c) for c in all_columns()]
+
+def category_of(dataset_dir: Path) -> str:
+    """Movement category = the folder name with its `YYYY-MM-DD_HHMMSS_` prefix
+    stripped, so all reps of one movement share a category (`overheadfast`, ...)."""
+    name = Path(dataset_dir).name
+    stripped = _STAMP_RE.sub("", name)
+    return stripped or name
 
 
 # --------------------------------------------------------------------------- #
-#  Burst / rep segmentation (shared by several scorers)
+#  Burst / rep segmentation
 # --------------------------------------------------------------------------- #
 def _runs(mask: np.ndarray) -> List[Tuple[int, int]]:
     """Half-open [start, end) index ranges of contiguous True in a bool mask."""
@@ -131,12 +170,13 @@ def segment_reps(
 ) -> List[Tuple[int, int]]:
     """Amplitude-threshold onset detection over the envelope.
 
-    A rep is a run where the envelope rises a fraction `onset_frac` of the way
-    from its resting level (20th pct) to its peak (95th pct). Short runs are
-    dropped and runs separated by < `merge_gap_s` are merged, the standard
-    amplitude onset-detection recipe [R15]. Returns [start, end) sample ranges;
-    empty when the signal is essentially flat (no bursts, e.g. a constant test
-    pattern or a pure-noise rest recording).
+    A burst is a run where the envelope rises `onset_frac` of the way from its
+    resting level (20th pct) to its peak (95th pct). Short runs are dropped and
+    runs separated by < `merge_gap_s` are merged [R15]. Returns [start, end)
+    sample ranges; empty when the signal is essentially flat.
+
+    Within a single rep file this normally finds the one rep; `dominant_rep`
+    picks the strongest run when noise splits it into several.
     """
     n = envelope.size
     if n == 0 or fs <= 0:
@@ -156,7 +196,8 @@ def segment_reps(
     merged: List[Tuple[int, int]] = []
     for s, e in reps:
         if merged and s - merged[-1][1] <= merge_gap:
-            merged[-1] = (merged[-1][0], e)
+            # max(): a run nested inside the span it merges into must not shorten it
+            merged[-1] = (merged[-1][0], max(e, merged[-1][1]))
         else:
             merged.append((s, e))
 
@@ -164,16 +205,84 @@ def segment_reps(
     return [(s, e) for s, e in merged if e - s >= min_len]
 
 
+def dominant_rep(envelope: np.ndarray, fs: float) -> Tuple[int, int]:
+    """The single active burst of a one-rep file: the strongest run from
+    `segment_reps` (by envelope peak). Falls back to the whole array when no burst
+    is detected (e.g. a very short or flat recording)."""
+    reps = segment_reps(envelope, fs)
+    if not reps:
+        return (0, envelope.size)
+    return max(reps, key=lambda se: float(envelope[se[0]:se[1]].max())
+               if se[1] > se[0] else 0.0)
+
+
+def rep_profile(seg: np.ndarray, n: int = TIME_NORM_LEN) -> Optional[np.ndarray]:
+    """Resample a rep's envelope onto `n` points in [0,1] time so reps of different
+    durations can be compared shape-for-shape."""
+    if seg.size < 2:
+        return None
+    xp = np.linspace(0.0, 1.0, seg.size)
+    xq = np.linspace(0.0, 1.0, n)
+    return np.interp(xq, xp, seg)
+
+
+def robust_max(envelope: np.ndarray, fs: float,
+               pct: float = MVC_PERCENTILE) -> Optional[float]:
+    """MVC reference: a high percentile of the amp contraction's envelope.
+
+    Taken over the amp file's dominant burst (its actual contraction, not the rest
+    before/after). The `pct`th percentile (default 99th) discards the top ~1% of
+    samples — where a lone sensor-shift spike would sit — while still reflecting the
+    true attainable peak, so one artefact can't define 100% MVC. A moving-average
+    "sustained max" was tried first but sat well below real rep peaks and made every
+    %MVC saturate; a percentile is on the same instantaneous scale as a rep's peak.
+    """
+    if envelope.size == 0 or fs <= 0:
+        return None
+    s, e = dominant_rep(envelope, fs)
+    seg = envelope[s:e] if e > s else envelope
+    if seg.size == 0:
+        seg = envelope
+    return float(np.percentile(seg, pct))
+
+
 # --------------------------------------------------------------------------- #
-#  Dataset context passed to every scorer
+#  Spectral helpers (shared by mains + spectral metrics)
+# --------------------------------------------------------------------------- #
+def _mains_residual(f: np.ndarray, fs: float, mains_hz: float) -> Optional[float]:
+    if f.size < 64 or fs <= 0:
+        return None
+    nperseg = int(min(f.size, max(64, fs)))
+    freqs, psd = signal.welch(f, fs=fs, nperseg=nperseg)
+    total = float(np.sum(psd))
+    if total <= 0:
+        return None
+    bw = 1.5
+    band = np.zeros_like(freqs, dtype=bool)
+    k = 1
+    while mains_hz * k < 0.99 * (fs / 2.0):
+        band |= (freqs >= mains_hz * k - bw) & (freqs <= mains_hz * k + bw)
+        k += 1
+    return float(np.sum(psd[band]) / total)
+
+
+def _median_freq(x: np.ndarray, fs: float) -> Optional[float]:
+    if x.size < 64 or fs <= 0:
+        return None
+    nperseg = int(min(x.size, max(64, fs)))
+    freqs, psd = signal.welch(x, fs=fs, nperseg=nperseg)
+    cumulative = np.cumsum(psd)
+    if cumulative[-1] <= 0:
+        return None
+    return float(np.interp(cumulative[-1] / 2.0, cumulative, freqs))
+
+
+# --------------------------------------------------------------------------- #
+#  Loading one rep file
 # --------------------------------------------------------------------------- #
 @dataclass
 class DatasetContext:
-    """Everything a scorer needs about one loaded recording.
-
-    `reps()` runs onset detection once and caches it, so amplitude, SNR, onset
-    and consistency all share a single segmentation.
-    """
+    """Everything loaded from one recording folder (one rep, or the amp file)."""
     subject: str
     dataset: str
     path: Path
@@ -185,282 +294,19 @@ class DatasetContext:
     filtered: np.ndarray
     envelope: np.ndarray
     contact: np.ndarray            # float array, NaN where the flag was absent
-    _reps: Optional[List[Tuple[int, int]]] = field(default=None, repr=False)
+    _rep: Optional[Tuple[int, int]] = field(default=None, repr=False)
 
-    def reps(self) -> List[Tuple[int, int]]:
-        if self._reps is None:
-            self._reps = segment_reps(self.envelope, self.fs)
-        return self._reps
+    def rep(self) -> Tuple[int, int]:
+        """[start, end) of this file's single dominant rep (cached)."""
+        if self._rep is None:
+            self._rep = dominant_rep(self.envelope, self.fs)
+        return self._rep
 
-    def active_mask(self) -> np.ndarray:
-        mask = np.zeros(self.filtered.size, dtype=bool)
-        for s, e in self.reps():
-            mask[s:e] = True
-        return mask
-
-
-# --------------------------------------------------------------------------- #
-#  Scorer base + registry
-# --------------------------------------------------------------------------- #
-class Scorer(abc.ABC):
-    """Computes one or more metric columns from a DatasetContext.
-
-    compute() must never raise and must return a value for every name in
-    `columns` (use None when the metric cannot be computed on this data).
-    """
-    name: str = "unnamed"
-    columns: Tuple[str, ...] = ()
-
-    @abc.abstractmethod
-    def compute(self, ctx: DatasetContext) -> Dict[str, Optional[float]]: ...
+    @property
+    def category(self) -> str:
+        return category_of(self.path)
 
 
-_REGISTRY: Dict[str, Type[Scorer]] = {}
-
-
-def register_scorer(cls: Type[Scorer]) -> Type[Scorer]:
-    if cls.name in _REGISTRY and _REGISTRY[cls.name] is not cls:
-        raise ValueError(f"scorer name already registered: {cls.name!r}")
-    _REGISTRY[cls.name] = cls
-    return cls
-
-
-def available_scorers() -> List[str]:
-    return sorted(_REGISTRY)
-
-
-def metric_columns() -> List[str]:
-    """Every metric column, in scorer-registration then declared order."""
-    cols: List[str] = []
-    for cls in _REGISTRY.values():
-        cols.extend(cls.columns)
-    return cols
-
-
-# --------------------------------------------------------------------------- #
-#  Scorers
-# --------------------------------------------------------------------------- #
-@register_scorer
-class Amplitude(Scorer):
-    """Activation level: RMS and mean-absolute-value of the cleaned signal."""
-    name = "amplitude"
-    columns = ("rms_amplitude", "mav")
-
-    def compute(self, ctx: DatasetContext) -> Dict[str, Optional[float]]:
-        f = ctx.filtered
-        if f.size == 0:
-            return {"rms_amplitude": None, "mav": None}
-        return {
-            "rms_amplitude": float(np.sqrt(np.mean(f * f))),
-            "mav": float(np.mean(np.abs(f))),
-        }
-
-
-@register_scorer
-class NoiseSnr(Scorer):
-    """Signal-quality gate: rest-period noise floor and active-vs-rest SNR (dB)."""
-    name = "snr"
-    columns = ("baseline_noise", "snr_db")
-
-    def compute(self, ctx: DatasetContext) -> Dict[str, Optional[float]]:
-        f = ctx.filtered
-        if f.size == 0:
-            return {"baseline_noise": None, "snr_db": None}
-        active = ctx.active_mask()
-        rest = f[~active]
-        act = f[active]
-        base = float(np.sqrt(np.mean(rest * rest))) if rest.size else None
-        if base is None or base <= 0 or act.size == 0:
-            # No bursts detected -> the whole record is "rest": report its RMS as
-            # the noise floor, but SNR is undefined without an active segment.
-            return {"baseline_noise": base, "snr_db": None}
-        rms_act = float(np.sqrt(np.mean(act * act)))
-        return {"baseline_noise": base, "snr_db": 20.0 * math.log10(rms_act / base)}
-
-
-@register_scorer
-class MainsResidual(Scorer):
-    """Fraction of power left at mains + harmonics after notching (lower = cleaner)."""
-    name = "mains"
-    columns = ("mains_residual",)
-
-    def compute(self, ctx: DatasetContext) -> Dict[str, Optional[float]]:
-        f = ctx.filtered
-        fs = ctx.fs
-        if f.size < 64 or fs <= 0:
-            return {"mains_residual": None}
-        nperseg = int(min(f.size, max(64, fs)))  # ~1 s windows when available
-        freqs, psd = signal.welch(f, fs=fs, nperseg=nperseg)
-        total = float(np.sum(psd))
-        if total <= 0:
-            return {"mains_residual": None}
-        m = ctx.cfg.mains_hz
-        bw = 1.5
-        band = np.zeros_like(freqs, dtype=bool)
-        k = 1
-        while m * k < 0.99 * (fs / 2.0):
-            band |= (freqs >= m * k - bw) & (freqs <= m * k + bw)
-            k += 1
-        return {"mains_residual": float(np.sum(psd[band]) / total)}
-
-
-@register_scorer
-class Spectral(Scorer):
-    """Median power frequency of the active signal (standard spectral descriptor)."""
-    name = "spectral"
-    columns = ("median_freq_hz",)
-
-    def compute(self, ctx: DatasetContext) -> Dict[str, Optional[float]]:
-        f = ctx.filtered
-        fs = ctx.fs
-        if f.size == 0 or fs <= 0:
-            return {"median_freq_hz": None}
-        active = ctx.active_mask()
-        x = f[active] if active.any() else f
-        if x.size < 64:
-            return {"median_freq_hz": None}
-        nperseg = int(min(x.size, max(64, fs)))
-        freqs, psd = signal.welch(x, fs=fs, nperseg=nperseg)
-        cumulative = np.cumsum(psd)
-        if cumulative[-1] <= 0:
-            return {"median_freq_hz": None}
-        half = cumulative[-1] / 2.0
-        return {"median_freq_hz": float(np.interp(half, cumulative, freqs))}
-
-
-@register_scorer
-class Onset(Scorer):
-    """Contraction count and onset sharpness (rise time from onset to peak)."""
-    name = "onset"
-    columns = ("n_reps", "rise_time_ms", "onset_sharpness")
-
-    def compute(self, ctx: DatasetContext) -> Dict[str, Optional[float]]:
-        reps = ctx.reps()
-        env = ctx.envelope
-        fs = ctx.fs
-        n = len(reps)
-        if n == 0 or fs <= 0:
-            return {"n_reps": float(n), "rise_time_ms": None, "onset_sharpness": None}
-        rises_ms: List[float] = []
-        for s, e in reps:
-            seg = env[s:e]
-            if seg.size < 2:
-                continue
-            peak_i = int(np.argmax(seg))
-            rise_ms = (peak_i / fs) * 1000.0
-            if rise_ms > 0:
-                rises_ms.append(rise_ms)
-        if not rises_ms:
-            return {"n_reps": float(n), "rise_time_ms": None, "onset_sharpness": None}
-        mean_rise = float(np.mean(rises_ms))
-        # Sharpness = inverse rise time (1/s): higher means a more decisive onset.
-        return {
-            "n_reps": float(n),
-            "rise_time_ms": mean_rise,
-            "onset_sharpness": 1000.0 / mean_rise,
-        }
-
-
-@register_scorer
-class Consistency(Scorer):
-    """Inter-rep consistency = 1 - mean CV of the time-normalised rep envelope."""
-    name = "consistency"
-    columns = ("inter_rep_consistency",)
-    profile_len = 100
-
-    def compute(self, ctx: DatasetContext) -> Dict[str, Optional[float]]:
-        reps = ctx.reps()
-        env = ctx.envelope
-        if len(reps) < 2:
-            return {"inter_rep_consistency": None}
-        profiles: List[np.ndarray] = []
-        xq = np.linspace(0.0, 1.0, self.profile_len)
-        for s, e in reps:
-            seg = env[s:e]
-            if seg.size < 2:
-                continue
-            xp = np.linspace(0.0, 1.0, seg.size)
-            profiles.append(np.interp(xq, xp, seg))
-        if len(profiles) < 2:
-            return {"inter_rep_consistency": None}
-        mat = np.vstack(profiles)
-        mean = mat.mean(axis=0)
-        std = mat.std(axis=0)
-        good = mean > 1e-9
-        if not good.any():
-            return {"inter_rep_consistency": None}
-        cv = std[good] / mean[good]
-        return {"inter_rep_consistency": float(1.0 - float(np.mean(cv)))}
-
-
-@register_scorer
-class Contact(Scorer):
-    """Fraction of samples the wear/contact flag reported good (data-quality gate)."""
-    name = "contact"
-    columns = ("contact_frac",)
-
-    def compute(self, ctx: DatasetContext) -> Dict[str, Optional[float]]:
-        c = ctx.contact
-        valid = c[~np.isnan(c)] if c.size else c
-        if valid.size == 0:
-            return {"contact_frac": None}
-        return {"contact_frac": float(np.mean(valid))}
-
-
-# --------------------------------------------------------------------------- #
-#  Composite signal-quality gate  (transparent + reconfigurable, not a Scorer)
-# --------------------------------------------------------------------------- #
-@dataclass
-class QualityWeights:
-    """Knobs for composite_quality(). Defaults are a documented heuristic, not a
-    law — the research fixes only that a quality gate must *exist* (exclude noisy
-    reps), not its exact form. Tune freely for your rig."""
-    snr_floor_db: float = 3.0     # at/below this, the SNR sub-score is 0
-    snr_good_db: float = 20.0     # at/above this, the SNR sub-score is 1
-    mains_tol: float = 0.20       # mains_residual at/above this -> mains sub-score 0
-    w_snr: float = 0.6
-    w_mains: float = 0.4
-
-
-def _clamp01(x: float) -> float:
-    return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
-
-
-def composite_quality(row: Dict[str, Optional[float]],
-                      w: Optional[QualityWeights] = None) -> Optional[float]:
-    """0..1 signal-integrity score: is this recording clean enough to trust?
-
-    Blends the available quality sub-scores (SNR, mains residual), reweighting to
-    whatever is present, then gates on contact fraction. Returns None when no
-    quality evidence exists at all. Deliberately excludes the motor-learning
-    metrics (consistency/sharpness/amplitude): those describe the movement, not
-    whether the signal is usable, and which of them matters is an open question.
-    """
-    w = w or QualityWeights()
-    parts: List[Tuple[float, float]] = []  # (weight, sub_score)
-
-    snr = row.get("snr_db")
-    if snr is not None and w.snr_good_db > w.snr_floor_db:
-        parts.append((w.w_snr, _clamp01(
-            (snr - w.snr_floor_db) / (w.snr_good_db - w.snr_floor_db))))
-
-    mains = row.get("mains_residual")
-    if mains is not None and w.mains_tol > 0:
-        parts.append((w.w_mains, _clamp01(1.0 - mains / w.mains_tol)))
-
-    if not parts:
-        return None
-    total_w = sum(wt for wt, _ in parts)
-    base = sum(wt * sub for wt, sub in parts) / total_w if total_w > 0 else 0.0
-
-    contact = row.get("contact_frac")
-    gate = contact if contact is not None else 1.0
-    return _clamp01(base * gate)
-
-
-# --------------------------------------------------------------------------- #
-#  Loading a recording
-# --------------------------------------------------------------------------- #
 def _read_signal_csv(path: Path) -> Dict[str, np.ndarray]:
     """Read signal.csv into named float columns; blank cells become NaN."""
     with open(path, "r", newline="", encoding="utf-8") as fh:
@@ -484,9 +330,8 @@ def load_dataset(dataset_dir: Path, recordings_root: Path,
     """Load one recording folder into a DatasetContext.
 
     Uses the stored `filtered`/`envelope` columns by default (what the subject
-    actually experienced). Re-derives them from `raw` via the session's own
-    filter config when `refilter=True` or when those columns are missing — the
-    "recordings can be re-filtered offline" contract from the project design.
+    actually experienced). Re-derives them from `raw` via the session's own filter
+    config when `refilter=True` or when those columns are missing.
     """
     dataset_dir = Path(dataset_dir)
     meta_path = dataset_dir / "session.json"
@@ -517,8 +362,6 @@ def load_dataset(dataset_dir: Path, recordings_root: Path,
 
     contact = data.get("contact_ok", np.full(raw.size, math.nan))
 
-    # subject = folder grouping the dataset under recordings/; "" if it sits
-    # directly in the recordings root (the old flat layout).
     try:
         rel = dataset_dir.resolve().relative_to(recordings_root.resolve())
         subject = rel.parts[0] if len(rel.parts) > 1 else ""
@@ -541,39 +384,8 @@ def load_dataset(dataset_dir: Path, recordings_root: Path,
 
 
 # --------------------------------------------------------------------------- #
-#  Scoring one dataset -> one row
+#  Discovery: recordings -> subjects -> categories -> rep folders
 # --------------------------------------------------------------------------- #
-def score_dataset(ctx: DatasetContext,
-                  weights: Optional[QualityWeights] = None) -> Dict[str, object]:
-    """Run every registered scorer over a context and return one flat CSV row."""
-    row: Dict[str, object] = {
-        "subject": ctx.subject,
-        "dataset": ctx.dataset,
-        "started": ctx.meta.get("started", ""),
-        "duration_s": ctx.meta.get("duration_s", round(ctx.raw.size / ctx.fs, 3)),
-        "n_samples": ctx.raw.size,
-        "sample_rate": int(ctx.fs),
-        "mains_hz": ctx.cfg.mains_hz,
-    }
-    metrics: Dict[str, Optional[float]] = {}
-    for cls in _REGISTRY.values():
-        try:
-            metrics.update(cls().compute(ctx))
-        except Exception as exc:  # a broken scorer must not sink the whole run
-            for col in cls.columns:
-                metrics[col] = None
-            metrics.setdefault("_errors", "")
-            metrics["_errors"] = f"{metrics['_errors']} {cls.name}:{exc}".strip()
-    row.update(metrics)
-    row[SCORE_COLUMN] = composite_quality(metrics, weights)
-    return row
-
-
-def all_columns() -> List[str]:
-    """Full CSV header in stable order."""
-    return [*META_COLUMNS, *metric_columns(), SCORE_COLUMN]
-
-
 def find_datasets(recordings_root: Path) -> List[Path]:
     """Every folder under recordings_root that contains a signal.csv, sorted."""
     root = Path(recordings_root)
@@ -582,28 +394,274 @@ def find_datasets(recordings_root: Path) -> List[Path]:
     return sorted(p.parent for p in root.rglob("signal.csv"))
 
 
+@dataclass
+class SubjectGroup:
+    """One test subject: their MVC (amp) folder and their movement categories."""
+    subject: str
+    amp_dir: Optional[Path]
+    categories: Dict[str, List[Path]]   # category -> rep folders (sorted), no amp
+
+
+def find_subjects(recordings_root: Path) -> List[SubjectGroup]:
+    """Group every rep folder under recordings_root by subject then category.
+
+    The subject is the folder directly under the recordings root; rep folders that
+    sit in the root itself (old flat layout) are grouped under "(ungrouped)". The
+    `amp` category is pulled aside as the subject's MVC reference.
+    """
+    root = Path(recordings_root)
+    root_res = root.resolve()
+    by_subject: Dict[str, List[Path]] = {}
+    for d in find_datasets(root):
+        parent = d.parent
+        subject = "(ungrouped)" if parent.resolve() == root_res else parent.name
+        by_subject.setdefault(subject, []).append(d)
+
+    groups: List[SubjectGroup] = []
+    for subject in sorted(by_subject):
+        amp_dir: Optional[Path] = None
+        categories: Dict[str, List[Path]] = {}
+        for d in sorted(by_subject[subject]):
+            cat = category_of(d)
+            if cat == AMP_CATEGORY:
+                if amp_dir is None:
+                    amp_dir = d  # first amp folder is the MVC reference
+                continue
+            categories.setdefault(cat, []).append(d)
+        groups.append(SubjectGroup(subject, amp_dir, categories))
+    return groups
+
+
+def subject_mvc(amp_dir: Optional[Path], recordings_root: Path,
+                refilter: bool = False, mains_hz: Optional[float] = None) -> Optional[float]:
+    """Robust MVC reference (counts) for a subject from their amp recording, or
+    None when there is no amp folder / it can't be loaded."""
+    if amp_dir is None:
+        return None
+    try:
+        ctx = load_dataset(amp_dir, recordings_root, refilter=refilter, mains_hz=mains_hz)
+    except Exception:
+        return None
+    return robust_max(ctx.envelope, ctx.fs)
+
+
+# --------------------------------------------------------------------------- #
+#  Scoring one rep, then aggregating a category
+# --------------------------------------------------------------------------- #
+def score_rep(ctx: DatasetContext, mvc: Optional[float]
+              ) -> Tuple[Dict[str, Optional[float]], Optional[np.ndarray]]:
+    """Metrics for one rep file + its time-normalised envelope profile.
+
+    The rep is the file's dominant burst; the pre-onset stretch is its rest
+    baseline. When an MVC is given, the rep envelope is clipped only above
+    SPIKE_TRIM_FACTOR × MVC (gross shift artefacts, not normal overshoot) and the
+    %MVC columns are filled.
+    """
+    env = ctx.envelope
+    filt = ctx.filtered
+    fs = ctx.fs
+    s, e = ctx.rep()
+    rep_env = env[s:e]
+    rep_filt = filt[s:e]
+    rest_filt = filt[:s]  # everything before onset is rest baseline
+
+    ceil = mvc * SPIKE_TRIM_FACTOR if (mvc and mvc > 0) else None
+    rep_env_c = np.minimum(rep_env, ceil) if ceil else rep_env
+
+    row: Dict[str, Optional[float]] = {}
+
+    row["rms_amplitude"] = float(np.sqrt(np.mean(rep_filt ** 2))) if rep_filt.size else None
+    row["mav"] = float(np.mean(np.abs(rep_filt))) if rep_filt.size else None
+    peak = float(rep_env_c.max()) if rep_env_c.size else None
+    row["peak"] = peak
+
+    if mvc and mvc > 0 and rep_env_c.size:
+        row["mean_pct_mvc"] = float(np.mean(rep_env_c) / mvc * 100.0)
+        row["peak_pct_mvc"] = float(peak / mvc * 100.0)
+    else:
+        row["mean_pct_mvc"] = None
+        row["peak_pct_mvc"] = None
+
+    base = float(np.sqrt(np.mean(rest_filt ** 2))) if rest_filt.size else None
+    row["baseline_noise"] = base
+    if base and base > 0 and rep_filt.size:
+        rms_act = float(np.sqrt(np.mean(rep_filt ** 2)))
+        row["snr_db"] = 20.0 * math.log10(rms_act / base)
+    else:
+        row["snr_db"] = None
+
+    row["mains_residual"] = _mains_residual(filt, fs, ctx.cfg.mains_hz)
+    row["median_freq_hz"] = _median_freq(rep_filt if rep_filt.size >= 64 else filt, fs)
+
+    if rep_env.size >= 2 and fs > 0:
+        peak_i = int(np.argmax(rep_env))
+        rise_ms = (peak_i / fs) * 1000.0
+        row["rise_time_ms"] = rise_ms if rise_ms > 0 else None
+        row["onset_sharpness"] = (1000.0 / rise_ms) if rise_ms > 0 else None
+    else:
+        row["rise_time_ms"] = None
+        row["onset_sharpness"] = None
+
+    c = ctx.contact
+    valid = c[~np.isnan(c)] if c.size else c
+    row["contact_frac"] = float(np.mean(valid)) if valid.size else None
+
+    return row, rep_profile(rep_env_c)
+
+
+def _nanmean(values) -> Optional[float]:
+    xs = [v for v in values
+          if v is not None and not (isinstance(v, float) and math.isnan(v))]
+    return float(np.mean(xs)) if xs else None
+
+
+def inter_rep_consistency(profiles: List[Optional[np.ndarray]]) -> Optional[float]:
+    """1 - mean(CV) across the reps' time-normalised envelope profiles. Needs ≥2
+    reps; None otherwise. Higher = more repeatable movement."""
+    profs = [p for p in profiles if p is not None]
+    if len(profs) < 2:
+        return None
+    mat = np.vstack(profs)
+    mean = mat.mean(axis=0)
+    std = mat.std(axis=0)
+    good = mean > 1e-9
+    if not good.any():
+        return None
+    cv = std[good] / mean[good]
+    return float(1.0 - float(np.mean(cv)))
+
+
+def rep_row(ctx: DatasetContext, subject: str, category: str,
+            mvc: Optional[float]) -> Tuple[Dict[str, object], Optional[np.ndarray]]:
+    """One reps.csv row (identity + metrics) for a rep, plus its profile."""
+    metrics, profile = score_rep(ctx, mvc)
+    row: Dict[str, object] = {
+        "subject": subject,
+        "category": category,
+        "rep": ctx.dataset,
+        "started": ctx.meta.get("started", ""),
+        "duration_s": ctx.meta.get("duration_s", round(ctx.raw.size / ctx.fs, 3)),
+        "n_samples": ctx.raw.size,
+        "sample_rate": int(ctx.fs),
+        "mains_hz": ctx.cfg.mains_hz,
+    }
+    row.update(metrics)
+    return row, profile
+
+
+def aggregate_category(subject: str, category: str, mvc: Optional[float],
+                       rep_rows: List[Dict[str, object]],
+                       profiles: List[Optional[np.ndarray]],
+                       weights: Optional["QualityWeights"] = None) -> Dict[str, object]:
+    """Collapse a category's rep rows into one scores.csv row: mean of every rep
+    metric, consistency across the reps, and the composite quality gate."""
+    cat: Dict[str, object] = {
+        "subject": subject,
+        "category": category,
+        "n_reps": len(rep_rows),
+        "mvc_reference": round(mvc, 4) if mvc else None,
+    }
+    for col in REP_METRIC_COLUMNS:
+        cat[col] = _nanmean([r.get(col) for r in rep_rows])
+    cat["inter_rep_consistency"] = inter_rep_consistency(profiles)
+    cat[SCORE_COLUMN] = composite_quality(cat, weights)
+    return cat
+
+
+# --------------------------------------------------------------------------- #
+#  Composite signal-quality gate  (transparent + reconfigurable)
+# --------------------------------------------------------------------------- #
+@dataclass
+class QualityWeights:
+    """Knobs for composite_quality(). Defaults are a documented heuristic, not a
+    law — the research fixes only that a quality gate must *exist* (exclude noisy
+    reps), not its exact form. Tune freely for your rig."""
+    snr_floor_db: float = 3.0
+    snr_good_db: float = 20.0
+    mains_tol: float = 0.20
+    w_snr: float = 0.6
+    w_mains: float = 0.4
+
+
+def _clamp01(x: float) -> float:
+    return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
+
+
+def composite_quality(row: Dict[str, object],
+                      w: Optional[QualityWeights] = None) -> Optional[float]:
+    """0..1 signal-integrity score: is this (aggregated) recording clean enough to
+    trust? Blends SNR + mains sub-scores (reweighted to whatever is present) then
+    gates on contact fraction. None when no quality evidence exists. Excludes the
+    motor-learning metrics — those describe the movement, not signal usability."""
+    w = w or QualityWeights()
+    parts: List[Tuple[float, float]] = []
+
+    snr = row.get("snr_db")
+    if snr is not None and w.snr_good_db > w.snr_floor_db:
+        parts.append((w.w_snr, _clamp01(
+            (float(snr) - w.snr_floor_db) / (w.snr_good_db - w.snr_floor_db))))
+
+    mains = row.get("mains_residual")
+    if mains is not None and w.mains_tol > 0:
+        parts.append((w.w_mains, _clamp01(1.0 - float(mains) / w.mains_tol)))
+
+    if not parts:
+        return None
+    total_w = sum(wt for wt, _ in parts)
+    base = sum(wt * sub for wt, sub in parts) / total_w if total_w > 0 else 0.0
+
+    contact = row.get("contact_frac")
+    gate = float(contact) if contact is not None else 1.0
+    return _clamp01(base * gate)
+
+
+# --------------------------------------------------------------------------- #
+#  Scoring everything
+# --------------------------------------------------------------------------- #
 def score_all(recordings_root: Path, refilter: bool = False,
               mains_hz: Optional[float] = None,
               weights: Optional[QualityWeights] = None,
-              ) -> Tuple[List[Dict[str, object]], List[Tuple[Path, str]]]:
-    """Score every dataset under recordings_root.
+              ) -> Tuple[List[Dict[str, object]], List[Dict[str, object]],
+                         List[Tuple[Path, str]]]:
+    """Score every subject/category under recordings_root.
 
-    Returns (rows, failures) where failures is a list of (path, error message)
-    for datasets that could not be loaded at all.
+    Returns (category_rows, rep_rows, failures): one aggregated row per
+    (subject, category), one row per rep file, and (path, error) for reps that
+    could not be loaded. The amp folders are used as MVC references, not scored.
     """
-    rows: List[Dict[str, object]] = []
+    category_rows: List[Dict[str, object]] = []
+    rep_rows: List[Dict[str, object]] = []
     failures: List[Tuple[Path, str]] = []
-    for d in find_datasets(recordings_root):
-        try:
-            ctx = load_dataset(d, recordings_root, refilter=refilter, mains_hz=mains_hz)
-            rows.append(score_dataset(ctx, weights))
-        except Exception as exc:
-            failures.append((d, f"{type(exc).__name__}: {exc}"))
-    rows.sort(key=lambda r: (str(r.get("subject", "")), str(r.get("started", "")),
-                             str(r.get("dataset", ""))))
-    return rows, failures
+    root = Path(recordings_root)
+
+    for group in find_subjects(root):
+        mvc = subject_mvc(group.amp_dir, root, refilter=refilter, mains_hz=mains_hz)
+        for category in sorted(group.categories):
+            rows: List[Dict[str, object]] = []
+            profiles: List[Optional[np.ndarray]] = []
+            for d in group.categories[category]:
+                try:
+                    ctx = load_dataset(d, root, refilter=refilter, mains_hz=mains_hz)
+                except Exception as exc:
+                    failures.append((d, f"{type(exc).__name__}: {exc}"))
+                    continue
+                r, profile = rep_row(ctx, group.subject, category, mvc)
+                rows.append(r)
+                profiles.append(profile)
+            if not rows:
+                continue
+            rep_rows.extend(rows)
+            category_rows.append(
+                aggregate_category(group.subject, category, mvc, rows, profiles, weights))
+
+    category_rows.sort(key=lambda r: (str(r["subject"]), str(r["category"])))
+    rep_rows.sort(key=lambda r: (str(r["subject"]), str(r["category"]), str(r["rep"])))
+    return category_rows, rep_rows, failures
 
 
+# --------------------------------------------------------------------------- #
+#  CSV output
+# --------------------------------------------------------------------------- #
 def _fmt(value: object) -> str:
     """Format a cell for CSV: blanks for None/NaN, ~4 significant figures."""
     if value is None:
@@ -615,14 +673,20 @@ def _fmt(value: object) -> str:
     return str(value)
 
 
-def write_csv(rows: List[Dict[str, object]], out_path: Path) -> Path:
-    """Write scored rows to a clean CSV with the canonical column order."""
+def header_labels(columns: Tuple[str, ...]) -> List[str]:
+    """Header row for `columns`: each labelled with its unit where it has one."""
+    return [COLUMN_LABELS.get(c, c) for c in columns]
+
+
+def write_csv(rows: List[Dict[str, object]], out_path: Path,
+              columns: Tuple[str, ...]) -> Path:
+    """Write rows to a clean CSV in the given column order, with unit-labelled
+    headers (data stays keyed by the bare column names)."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    columns = all_columns()
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow(header_labels())  # unit-annotated headers; data keyed by `columns`
+        writer.writerow(header_labels(columns))
         for row in rows:
             writer.writerow([_fmt(row.get(col)) for col in columns])
     return out_path

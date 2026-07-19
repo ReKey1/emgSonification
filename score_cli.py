@@ -1,18 +1,23 @@
-"""Score recorded sessions into a clean CSV of EMG properties.
+"""Score recorded sessions into clean CSVs of EMG properties.
 
-Walks a recordings folder, computes the research-grounded single-channel EMG
-metrics for every dataset it finds (see emg/scoring.py for the metrics and their
-literature basis), and writes one tidy row per dataset to a CSV.
+Walks a recordings folder, groups each subject's rep files by movement category
+(one folder = one rep), and writes:
 
-Works with both recording layouts:
-    recordings/<subject>/<timestamp>_<dataset>/signal.csv   (per-subject, current)
-    recordings/<timestamp>_<name>/signal.csv                (old flat layout)
+    scores.csv   one row per (subject, category), the reps aggregated
+    reps.csv     one row per individual rep file (drill-down)
+
+The per-subject `amp` recording is used as the MVC reference (for %MVC) and is not
+scored as a category. See emg/scoring.py for the metrics and their literature basis.
+
+Layouts handled:
+    recordings/<subject>/<timestamp>_<category>/signal.csv   (per-subject, current)
+    recordings/<timestamp>_<name>/signal.csv                 (old flat -> "(ungrouped)")
 
 Examples:
-    python score_cli.py                         # score ./recordings -> recordings/scores.csv
+    python score_cli.py                         # score ./recordings
     python score_cli.py --recordings data --out out.csv
     python score_cli.py --refilter              # re-derive filtered/envelope from raw
-    python score_cli.py --mains 60              # override mains freq for the notch/quality
+    python score_cli.py --mains 60              # override mains freq for notch/quality
 """
 
 from __future__ import annotations
@@ -22,16 +27,18 @@ import sys
 from pathlib import Path
 
 from emg.scoring import (
+    CATEGORY_COLUMNS,
+    REP_COLUMNS,
     SCORE_COLUMN,
     find_datasets,
     score_all,
     write_csv,
 )
 
-# Compact console view — the CSV carries every column; this is just a glance.
+# Compact console view — the CSVs carry every column; this is just a glance.
 _SUMMARY_COLUMNS = (
-    "subject", "dataset", "n_reps", "snr_db", "mains_residual",
-    "inter_rep_consistency", SCORE_COLUMN,
+    "subject", "category", "n_reps", "peak_pct_mvc", "snr_db",
+    "mains_residual", "inter_rep_consistency", SCORE_COLUMN,
 )
 
 
@@ -44,8 +51,9 @@ def _cell(value: object) -> str:
 
 
 def _print_summary(rows: list) -> None:
-    header = [c.replace("inter_rep_consistency", "consistency")
+    header = [c.replace("inter_rep_consistency", "consist")
               .replace("mains_residual", "mains")
+              .replace("peak_pct_mvc", "%MVC")
               .replace("quality_score", "quality") for c in _SUMMARY_COLUMNS]
     table = [header] + [[_cell(r.get(c)) for c in _SUMMARY_COLUMNS] for r in rows]
     widths = [max(len(row[i]) for row in table) for i in range(len(header))]
@@ -56,11 +64,12 @@ def _print_summary(rows: list) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Score recorded cheezEMG sessions to a CSV.")
+    ap = argparse.ArgumentParser(description="Score recorded cheezEMG sessions to CSVs.")
     ap.add_argument("--recordings", default="recordings",
                     help="folder of recorded sessions (default: recordings)")
     ap.add_argument("--out", default=None,
-                    help="output CSV path (default: <recordings>/scores.csv)")
+                    help="per-category CSV path (default: <recordings>/scores.csv); "
+                         "the per-rep CSV is written as reps.csv beside it")
     ap.add_argument("--refilter", action="store_true",
                     help="re-derive filtered/envelope from raw using each session's config")
     ap.add_argument("--mains", type=float, default=None,
@@ -77,19 +86,23 @@ def main() -> int:
         print(f"No datasets (folders with signal.csv) found under {root}", file=sys.stderr)
         return 1
 
-    out_path = Path(args.out) if args.out else root / "scores.csv"
-    print(f"Scoring {len(datasets)} dataset(s) under {root}"
+    scores_path = Path(args.out) if args.out else root / "scores.csv"
+    reps_path = scores_path.with_name("reps.csv")
+    print(f"Scoring {len(datasets)} rep folder(s) under {root}"
           + (" [refiltering from raw]" if args.refilter else ""))
 
-    rows, failures = score_all(root, refilter=args.refilter, mains_hz=args.mains)
+    category_rows, rep_rows, failures = score_all(
+        root, refilter=args.refilter, mains_hz=args.mains)
 
-    if rows:
-        _print_summary(rows)
-    written = write_csv(rows, out_path)
-    print(f"\nWrote {len(rows)} row(s) -> {written}")
+    if category_rows:
+        _print_summary(category_rows)
+    write_csv(category_rows, scores_path, CATEGORY_COLUMNS)
+    write_csv(rep_rows, reps_path, REP_COLUMNS)
+    print(f"\nWrote {len(category_rows)} category row(s) -> {scores_path}")
+    print(f"Wrote {len(rep_rows)} rep row(s)      -> {reps_path}")
 
     if failures:
-        print(f"\n{len(failures)} dataset(s) could not be scored:", file=sys.stderr)
+        print(f"\n{len(failures)} rep(s) could not be scored:", file=sys.stderr)
         for path, err in failures:
             print(f"  {path}: {err}", file=sys.stderr)
     return 0
