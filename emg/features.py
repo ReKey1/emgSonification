@@ -22,9 +22,23 @@ HOW TO ADD A CATEGORIZER
 
 That's it — no pipeline changes needed. A worked template
 (`WindowMeanAbs`, registered as "example") is included to show the mechanics;
-delete it once you have real extractors. The research targets (RMS profile,
-onset sharpness, co-contraction, inter-rep consistency, recruitment
-specificity) are stubbed at the bottom as fill-in-the-body starting points.
+delete it once you have real extractors.
+
+--------------------------------------------------------------------------
+RELATIONSHIP TO OFFLINE SCORING
+--------------------------------------------------------------------------
+`emg/scoring.py` is authoritative for the study's numbers. It implements the five
+features of llm_director_extension.md §10.3 (T1 rate of EMG rise, T2 offset rate,
+T3 active fraction, A1 peak amplitude, S1 median frequency) over finished
+recordings, where the rep boundaries are known and the whole signal is available.
+
+Nothing here duplicates that, and nothing here should. These stubs are the *live*
+path, and live extraction is a strictly harder problem: T1/T2 need a peak that has
+not happened yet, T3 needs a window that has not closed, and A1 needs the session
+MVC. They stay unimplemented on purpose — which quality is worth sonifying in real
+time is an open thesis question, and answering it early would bake in an answer the
+experiment is supposed to produce. The stubs below are named for the §10.3 features
+so the two modules at least speak one vocabulary.
 """
 
 from __future__ import annotations
@@ -167,50 +181,86 @@ class WindowMeanAbs(SlidingWindowExtractor):
 
 
 # --------------------------------------------------------------------------- #
-#  STUBS — the actual categorizations from the research plan.
+#  STUBS — live counterparts of the §10.3 feature set.
 #  Each is a ready-to-fill slot: set field/window_s if needed and implement
 #  compute(). They are NOT registered (so they never run until you finish
 #  them); register with @register_feature when ready. Delete any you don't want.
+#  See emg/scoring.py for the offline definition of each, which is authoritative.
 # --------------------------------------------------------------------------- #
-class RmsAmplitude(SlidingWindowExtractor):
-    """Overall activation level — RMS of the envelope/filtered window."""
-    name = "rms_amplitude"
+class RateOfRise(SlidingWindowExtractor):
+    """T1 — rate of EMG rise: peak of dE/dt over the rising phase.
+
+    Offline this is max(dE/dt) from cue to peak. Live, "the rising phase" is not
+    yet delimited, so a windowed running max of the positive derivative is the
+    natural approximation — decide and document how it relates to T1 before use.
+    """
+    name = "t1_rate_of_rise"
     field = "envelope"
-    window_s = 0.25
+    window_s = 0.5
 
     def compute(self) -> FeatureResult:
-        raise NotImplementedError("categorizer stub — implement RMS here")
+        raise NotImplementedError("categorizer stub — implement windowed max dE/dt")
 
 
-class OnsetSharpness(SlidingWindowExtractor):
-    """Rise time from baseline to peak within a contraction (decisiveness)."""
-    name = "onset_sharpness"
+class OffsetRate(SlidingWindowExtractor):
+    """T2 — offset rate: peak of -dE/dt as the muscle deactivates.
+
+    Symmetric to T1 and subject to the same caveat: the falling phase is only
+    identifiable after the peak has passed, so a live version necessarily lags.
+    """
+    name = "t2_offset_rate"
+    field = "envelope"
+    window_s = 0.5
+
+    def compute(self) -> FeatureResult:
+        raise NotImplementedError("categorizer stub — implement windowed max -dE/dt")
+
+
+class BurstDuration(SlidingWindowExtractor):
+    """T3 — burst duration (onset→offset) over the movement window.
+
+    Needs a resting baseline to threshold against and a detected offset, neither of
+    which is available live until a rest period and a deactivation have been observed.
+    """
+    name = "t3_burst_frac"
     field = "envelope"
     window_s = 1.0
 
     def compute(self) -> FeatureResult:
-        raise NotImplementedError("categorizer stub — implement rise-time here")
+        raise NotImplementedError("categorizer stub — implement burst duration here")
 
 
-class InterRepConsistency(FeatureExtractor):
-    """Variance of the per-rep envelope profile across the last N reps.
+class PeakAmplitude(SlidingWindowExtractor):
+    """A1 — peak envelope as %MVC.
 
-    Needs rep segmentation (onset/offset detection) before comparison — hold
-    completed rep profiles and compare, rather than using a fixed window.
+    Requires the session MVC reference, so it cannot be computed from the stream
+    alone; the pipeline must supply the normaliser.
     """
-    name = "inter_rep_consistency"
-
-    def __init__(self, cfg: Config):
-        self.cfg = cfg
-        self._reps: Deque[np.ndarray] = deque(maxlen=8)
-
-    def update(self, sample: ProcessedSample) -> None:
-        raise NotImplementedError("categorizer stub — segment reps and store profiles")
+    name = "a1_peak_pct_mvc"
+    field = "envelope"
+    window_s = 1.0
 
     def compute(self) -> FeatureResult:
-        raise NotImplementedError("categorizer stub — compare stored rep profiles")
+        raise NotImplementedError("categorizer stub — needs a session MVC reference")
 
 
+class MedianFrequency(SlidingWindowExtractor):
+    """S1 — median power frequency.
+
+    Computed on the *filtered* signal, never the envelope: rectifying and
+    smoothing destroys the spectrum this measures.
+    """
+    name = "s1_mdf_hz"
+    field = "filtered"
+    window_s = 0.25
+
+    def compute(self) -> FeatureResult:
+        raise NotImplementedError("categorizer stub — implement MDF on the PSD")
+
+
+# Two-channel features. Out of reach on this rig, which is single-channel
+# (triceps long head): the antagonist brake of the triphasic pattern is simply
+# not observable. Kept as named slots for the planned 2-channel follow-up.
 class CoContractionRatio(FeatureExtractor):
     """Antagonist/agonist activation ratio. Needs a second EMG channel."""
     name = "co_contraction"

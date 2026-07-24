@@ -51,7 +51,6 @@ from scipy import signal as sp_signal
 from emg.config import Config
 from emg.scoring import (
     AMP_CATEGORY,
-    CATEGORY_EXTRA_COLUMNS,
     COLUMN_LABELS,
     DatasetContext,
     REP_METRIC_COLUMNS,
@@ -60,7 +59,9 @@ from emg.scoring import (
     aggregate_category,
     find_subjects,
     load_dataset,
+    rep_profile,
     rep_row,
+    rep_window,
     robust_max,
     subject_mvc,
 )
@@ -471,7 +472,11 @@ class Viewer(tk.Tk):
         ax_sig.plot(t, ctx.filtered, lw=0.9, color=COL_FILT, label="filtered")
         ax_env.plot(t, ctx.envelope, lw=1.1, color=COL_ENV, label="envelope")
 
-        s, e = ctx.rep()
+        # Shade what the scorer actually measures: the detected burst for a rep, or
+        # the amplitude-detected burst for the amp file, which has no cue. The cue
+        # line is drawn separately below so the reaction-time gap is visible.
+        win = rep_window(ctx)
+        s, e = (win[0], win[1]) if win is not None else ctx.rep()
         if e > s and e <= t.size:
             ax_env.axvspan(t[s], t[min(e, t.size) - 1], color=COL_REP, alpha=0.35)
         onset = ctx.meta.get("movement_onset_t")
@@ -501,7 +506,7 @@ class Viewer(tk.Tk):
             self._fill_metrics_rows([("note", "used as 100% MVC for this subject")])
             self.lbl_view.config(text="MVC reference recording")
         else:
-            row, _ = rep_row(ctx, subject, category, mvc)
+            row = rep_row(ctx, subject, category, mvc)
             meta_src = dict(ctx.meta)
             meta_src.update({"subject": subject, "category": category, "rep": ctx.dataset})
             self._fill_meta([(lbl, self._meta_value(meta_src, key))
@@ -541,9 +546,10 @@ class Viewer(tk.Tk):
         for d in rep_dirs:
             ctx = load_dataset(d, self.root_dir)
             reps.append(ctx)
-            row, prof = rep_row(ctx, subject, category, mvc)
-            rep_rows.append(row)
-            profiles.append(prof)
+            rep_rows.append(rep_row(ctx, subject, category, mvc))
+            win = rep_window(ctx)
+            s, e = (win[0], win[1]) if win is not None else ctx.rep()
+            profiles.append(rep_profile(ctx.envelope[s:e]))
 
         self.fig.clf()
         if self.var_mode.get() == "grid":
@@ -552,13 +558,12 @@ class Viewer(tk.Tk):
             self._draw_overlay(reps, profiles, subject, category, mvc)
 
         # tables: aggregate = the scores.csv row for this category
-        cat = aggregate_category(subject, category, mvc, rep_rows, profiles)
+        cat = aggregate_category(subject, category, mvc, rep_rows)
         self._fill_meta([("subject", subject), ("category", category),
                          ("n_reps", str(cat["n_reps"])),
                          ("MVC ref (counts)", _fmt(cat["mvc_reference"]))])
         self._fill_metrics_from_row(
-            cat, (*REP_METRIC_COLUMNS, *CATEGORY_EXTRA_COLUMNS, SCORE_COLUMN),
-            score_key=SCORE_COLUMN)
+            cat, (*REP_METRIC_COLUMNS, SCORE_COLUMN), score_key=SCORE_COLUMN)
         self.lbl_view.config(text=f"{len(reps)} reps — {self.var_mode.get()}")
 
     def _yscale(self, env: np.ndarray, mvc: Optional[float]) -> Tuple[np.ndarray, str]:

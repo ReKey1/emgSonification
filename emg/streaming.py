@@ -117,3 +117,55 @@ class EmgFilterChain:
 
 def build_chain(cfg: Config) -> EmgFilterChain:
     return EmgFilterChain(cfg)
+
+
+# --------------------------------------------------------------------------- #
+#  Offline (zero-phase) variant
+# --------------------------------------------------------------------------- #
+def process_offline(cfg: Config, raw: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Zero-phase equivalent of EmgFilterChain, for offline scoring only.
+
+    Same stages in the same order as `EmgFilterChain._build`, but filtered
+    forward-and-backward (`filtfilt`) instead of causally. A causal Butterworth
+    delays the signal by its group delay, which biases every timing measurement
+    taken off the envelope; forward-backward filtering cancels that delay exactly.
+    The live chain must stay causal (it drives audio in real time), so this is a
+    separate entry point rather than a flag on the chain.
+
+    Note filtfilt doubles the effective filter order, and can ring slightly
+    negative around sharp edges — the envelope is clamped at 0 because a
+    rectified envelope is non-negative by definition.
+    """
+    fs = float(cfg.sample_rate)
+    x = np.asarray(raw, dtype=np.float64)
+    if x.size == 0:
+        return x, x
+
+    if cfg.highpass_hz and cfg.highpass_hz > 0:
+        x = signal.sosfiltfilt(_highpass(fs, cfg.highpass_hz, cfg.highpass_order), x)
+    for f0 in cfg.notch_freqs():
+        x = signal.sosfiltfilt(_notch(fs, f0, cfg.notch_q), x)
+    if cfg.lowpass_hz and 0 < cfg.lowpass_hz < 0.99 * cfg.nyquist:
+        x = signal.sosfiltfilt(_lowpass(fs, cfg.lowpass_hz, cfg.lowpass_order), x)
+
+    filtered = x
+    envelope = signal.sosfiltfilt(
+        _lowpass(fs, cfg.envelope_hz, cfg.envelope_order), np.abs(filtered))
+    return filtered, np.maximum(envelope, 0.0)
+
+
+def tkeo(x: np.ndarray) -> np.ndarray:
+    """Teager-Kaiser energy operator:  psi[n] = x[n]^2 - x[n+1]*x[n-1].
+
+    A 3-sample nonlinear operator tracking the instantaneous amplitude x frequency
+    product, which is why it makes burst boundaries far crisper than amplitude
+    alone (Solnik et al. 2010: onset error 40 +/- 99 ms with, 229 +/- 356 ms
+    without). Apply to the *band-passed* signal, before rectification — never to
+    the envelope, whose smoothing has already destroyed the frequency content the
+    operator keys on. Edge samples have no neighbours and are returned as 0.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    out = np.zeros_like(x)
+    if x.size >= 3:
+        out[1:-1] = x[1:-1] ** 2 - x[2:] * x[:-2]
+    return out
