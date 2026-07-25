@@ -1,0 +1,185 @@
+{
+  "call_id": "claude-haiku-4-5__P1__r10",
+  "model": "claude-haiku-4-5",
+  "condition": "P1",
+  "repeat": 10,
+  "source": "api",
+  "valid": true,
+  "validation_errors": [],
+  "model_returned": "claude-haiku-4-5-20251001",
+  "request_id": "req_011CdNJYeqvf9bpU35Ewh4Nc",
+  "usage": {
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "not_available",
+    "input_tokens": 5018,
+    "output_tokens": 1099,
+    "service_tier": "standard"
+  },
+  "raw_text": "```json\n{\n  \"rankings\": {\n    \"T1\": [\n      \"M08\",\n      \"M06\",\n      \"M01\",\n      \"M05\",\n      \"M04\",\n      \"M09\",\n      \"M11\",\n      \"M10\",\n      \"M12\",\n      \"M07\",\n      \"M03\",\n      \"M02\"\n    ],\n    \"T2\": [\n      \"M08\",\n      \"M01\",\n      \"M06\",\n      \"M05\",\n      \"M04\",\n      \"M09\",\n      \"M11\",\n      \"M10\",\n      \"M12\",\n      \"M07\",\n      \"M03\",\n      \"M02\"\n    ],\n    \"T3\": [\n      \"M02\",\n      \"M03\",\n      \"M07\",\n      \"M12\",\n      \"M11\",\n      \"M10\",\n      \"M09\",\n      \"M06\",\n      \"M04\",\n      \"M05\",\n      \"M01\",\n      \"M08\"\n    ],\n    \"A1\": [\n      \"M08\",\n      \"M01\",\n      \"M06\",\n      \"M04\",\n      \"M05\",\n      \"M09\",\n      \"M11\",\n      \"M10\",\n      \"M12\",\n      \"M07\",\n      \"M03\",\n      \"M02\"\n    ],\n    \"S1\": [\n      \"M08\",\n      \"M01\",\n      \"M06\",\n      \"M05\",\n      \"M04\",\n      \"M09\",\n      \"M11\",\n      \"M10\",\n      \"M12\",\n      \"M07\",\n      \"M03\",\n      \"M02\"\n    ]\n  },\n  \"levels\": {\n    \"M01\": {\n      \"T1\": \"high\",\n      \"T2\": \"high\",\n      \"T3\": \"low\",\n      \"A1\": \"high\",\n      \"S1\": \"high\"\n    },\n    \"M02\": {\n      \"T1\": \"low\",\n      \"T2\": \"low\",\n      \"T3\": \"high\",\n      \"A1\": \"low\",\n      \"S1\": \"low\"\n    },\n    \"M03\": {\n      \"T1\": \"low\",\n      \"T2\": \"low\",\n      \"T3\": \"high\",\n      \"A1\": \"low\",\n      \"S1\": \"low\"\n    },\n    \"M04\": {\n      \"T1\": \"medium\",\n      \"T2\": \"medium\",\n      \"T3\": \"medium\",\n      \"A1\": \"medium\",\n      \"S1\": \"medium\"\n    },\n    \"M05\": {\n      \"T1\": \"high\",\n      \"T2\": \"high\",\n      \"T3\": \"low\",\n      \"A1\": \"high\",\n      \"S1\": \"high\"\n    },\n    \"M06\": {\n      \"T1\": \"high\",\n      \"T2\": \"high\",\n      \"T3\": \"medium\",\n      \"A1\": \"high\",\n      \"S1\": \"high\"\n    },\n    \"M07\": {\n      \"T1\": \"low\",\n      \"T2\": \"low\",\n      \"T3\": \"high\",\n      \"A1\": \"low\",\n      \"S1\": \"low\"\n    },\n    \"M08\": {\n      \"T1\": \"high\",\n      \"T2\": \"high\",\n      \"T3\": \"low\",\n      \"A1\": \"high\",\n      \"S1\": \"high\"\n    },\n    \"M09\": {\n      \"T1\": \"medium\",\n      \"T2\": \"medium\",\n      \"T3\": \"medium\",\n      \"A1\": \"medium\",\n      \"S1\": \"medium\"\n    },\n    \"M10\": {\n      \"T1\": \"medium\",\n      \"T2\": \"medium\",\n      \"T3\": \"medium\",\n      \"A1\": \"medium\",\n      \"S1\": \"medium\"\n    },\n    \"M11\": {\n      \"T1\": \"medium\",\n      \"T2\": \"medium\",\n      \"T3\": \"medium\",\n      \"A1\": \"medium\",\n      \"S1\": \"medium\"\n    },\n    \"M12\": {\n      \"T1\": \"low\",\n      \"T2\": \"low\",\n      \"T3\": \"medium\",\n      \"A1\": \"low\",\n      \"S1\": \"low\"\n    }\n  }\n}\n```",
+  "parsed": {
+    "rankings": {
+      "T1": [
+        "M08",
+        "M06",
+        "M01",
+        "M05",
+        "M04",
+        "M09",
+        "M11",
+        "M10",
+        "M12",
+        "M07",
+        "M03",
+        "M02"
+      ],
+      "T2": [
+        "M08",
+        "M01",
+        "M06",
+        "M05",
+        "M04",
+        "M09",
+        "M11",
+        "M10",
+        "M12",
+        "M07",
+        "M03",
+        "M02"
+      ],
+      "T3": [
+        "M02",
+        "M03",
+        "M07",
+        "M12",
+        "M11",
+        "M10",
+        "M09",
+        "M06",
+        "M04",
+        "M05",
+        "M01",
+        "M08"
+      ],
+      "A1": [
+        "M08",
+        "M01",
+        "M06",
+        "M04",
+        "M05",
+        "M09",
+        "M11",
+        "M10",
+        "M12",
+        "M07",
+        "M03",
+        "M02"
+      ],
+      "S1": [
+        "M08",
+        "M01",
+        "M06",
+        "M05",
+        "M04",
+        "M09",
+        "M11",
+        "M10",
+        "M12",
+        "M07",
+        "M03",
+        "M02"
+      ]
+    },
+    "levels": {
+      "M01": {
+        "T1": "high",
+        "T2": "high",
+        "T3": "low",
+        "A1": "high",
+        "S1": "high"
+      },
+      "M02": {
+        "T1": "low",
+        "T2": "low",
+        "T3": "high",
+        "A1": "low",
+        "S1": "low"
+      },
+      "M03": {
+        "T1": "low",
+        "T2": "low",
+        "T3": "high",
+        "A1": "low",
+        "S1": "low"
+      },
+      "M04": {
+        "T1": "medium",
+        "T2": "medium",
+        "T3": "medium",
+        "A1": "medium",
+        "S1": "medium"
+      },
+      "M05": {
+        "T1": "high",
+        "T2": "high",
+        "T3": "low",
+        "A1": "high",
+        "S1": "high"
+      },
+      "M06": {
+        "T1": "high",
+        "T2": "high",
+        "T3": "medium",
+        "A1": "high",
+        "S1": "high"
+      },
+      "M07": {
+        "T1": "low",
+        "T2": "low",
+        "T3": "high",
+        "A1": "low",
+        "S1": "low"
+      },
+      "M08": {
+        "T1": "high",
+        "T2": "high",
+        "T3": "low",
+        "A1": "high",
+        "S1": "high"
+      },
+      "M09": {
+        "T1": "medium",
+        "T2": "medium",
+        "T3": "medium",
+        "A1": "medium",
+        "S1": "medium"
+      },
+      "M10": {
+        "T1": "medium",
+        "T2": "medium",
+        "T3": "medium",
+        "A1": "medium",
+        "S1": "medium"
+      },
+      "M11": {
+        "T1": "medium",
+        "T2": "medium",
+        "T3": "medium",
+        "A1": "medium",
+        "S1": "medium"
+      },
+      "M12": {
+        "T1": "low",
+        "T2": "low",
+        "T3": "medium",
+        "A1": "low",
+        "S1": "low"
+      }
+    }
+  },
+  "elicited_at": "2026-07-25T06:29:10+00:00"
+}

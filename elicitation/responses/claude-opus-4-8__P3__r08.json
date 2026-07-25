@@ -1,0 +1,188 @@
+{
+  "call_id": "claude-opus-4-8__P3__r08",
+  "model": "claude-opus-4-8",
+  "condition": "P3",
+  "repeat": 8,
+  "source": "api",
+  "valid": true,
+  "validation_errors": [],
+  "model_returned": "claude-opus-4-8",
+  "request_id": "req_011CdNKCJKTdzvyJGdoYxXUE",
+  "usage": {
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "global",
+    "input_tokens": 6511,
+    "output_tokens": 842,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "service_tier": "standard"
+  },
+  "raw_text": "{\n  \"rankings\": {\n    \"T1\": [\"M08\", \"M12\", \"M03\", \"M11\", \"M06\", \"M01\", \"M10\", \"M05\", \"M04\", \"M02\", \"M09\", \"M07\"],\n    \"T2\": [\"M08\", \"M12\", \"M03\", \"M11\", \"M06\", \"M01\", \"M10\", \"M05\", \"M04\", \"M07\", \"M02\", \"M09\"],\n    \"T3\": [\"M06\", \"M09\", \"M08\", \"M04\", \"M02\", \"M07\", \"M10\", \"M05\", \"M12\", \"M01\", \"M03\", \"M11\"],\n    \"A1\": [\"M03\", \"M11\", \"M08\", \"M05\", \"M02\", \"M01\", \"M12\", \"M07\", \"M06\", \"M10\", \"M04\", \"M09\"],\n    \"S1\": [\"M08\", \"M12\", \"M03\", \"M11\", \"M06\", \"M01\", \"M10\", \"M05\", \"M04\", \"M02\", \"M07\", \"M09\"]\n  },\n  \"levels\": {\n    \"M01\": {\"T1\": \"medium\", \"T2\": \"medium\", \"T3\": \"low\", \"A1\": \"medium\", \"S1\": \"medium\"},\n    \"M02\": {\"T1\": \"low\", \"T2\": \"low\", \"T3\": \"medium\", \"A1\": \"medium\", \"S1\": \"low\"},\n    \"M03\": {\"T1\": \"high\", \"T2\": \"high\", \"T3\": \"low\", \"A1\": \"high\", \"S1\": \"high\"},\n    \"M04\": {\"T1\": \"medium\", \"T2\": \"medium\", \"T3\": \"high\", \"A1\": \"low\", \"S1\": \"medium\"},\n    \"M05\": {\"T1\": \"medium\", \"T2\": \"medium\", \"T3\": \"medium\", \"A1\": \"high\", \"S1\": \"medium\"},\n    \"M06\": {\"T1\": \"high\", \"T2\": \"high\", \"T3\": \"high\", \"A1\": \"low\", \"S1\": \"high\"},\n    \"M07\": {\"T1\": \"low\", \"T2\": \"low\", \"T3\": \"medium\", \"A1\": \"medium\", \"S1\": \"low\"},\n    \"M08\": {\"T1\": \"high\", \"T2\": \"high\", \"T3\": \"high\", \"A1\": \"high\", \"S1\": \"high\"},\n    \"M09\": {\"T1\": \"low\", \"T2\": \"low\", \"T3\": \"high\", \"A1\": \"low\", \"S1\": \"low\"},\n    \"M10\": {\"T1\": \"medium\", \"T2\": \"medium\", \"T3\": \"medium\", \"A1\": \"low\", \"S1\": \"medium\"},\n    \"M11\": {\"T1\": \"high\", \"T2\": \"high\", \"T3\": \"low\", \"A1\": \"high\", \"S1\": \"high\"},\n    \"M12\": {\"T1\": \"high\", \"T2\": \"high\", \"T3\": \"low\", \"A1\": \"medium\", \"S1\": \"high\"}\n  }\n}",
+  "parsed": {
+    "rankings": {
+      "T1": [
+        "M08",
+        "M12",
+        "M03",
+        "M11",
+        "M06",
+        "M01",
+        "M10",
+        "M05",
+        "M04",
+        "M02",
+        "M09",
+        "M07"
+      ],
+      "T2": [
+        "M08",
+        "M12",
+        "M03",
+        "M11",
+        "M06",
+        "M01",
+        "M10",
+        "M05",
+        "M04",
+        "M07",
+        "M02",
+        "M09"
+      ],
+      "T3": [
+        "M06",
+        "M09",
+        "M08",
+        "M04",
+        "M02",
+        "M07",
+        "M10",
+        "M05",
+        "M12",
+        "M01",
+        "M03",
+        "M11"
+      ],
+      "A1": [
+        "M03",
+        "M11",
+        "M08",
+        "M05",
+        "M02",
+        "M01",
+        "M12",
+        "M07",
+        "M06",
+        "M10",
+        "M04",
+        "M09"
+      ],
+      "S1": [
+        "M08",
+        "M12",
+        "M03",
+        "M11",
+        "M06",
+        "M01",
+        "M10",
+        "M05",
+        "M04",
+        "M02",
+        "M07",
+        "M09"
+      ]
+    },
+    "levels": {
+      "M01": {
+        "T1": "medium",
+        "T2": "medium",
+        "T3": "low",
+        "A1": "medium",
+        "S1": "medium"
+      },
+      "M02": {
+        "T1": "low",
+        "T2": "low",
+        "T3": "medium",
+        "A1": "medium",
+        "S1": "low"
+      },
+      "M03": {
+        "T1": "high",
+        "T2": "high",
+        "T3": "low",
+        "A1": "high",
+        "S1": "high"
+      },
+      "M04": {
+        "T1": "medium",
+        "T2": "medium",
+        "T3": "high",
+        "A1": "low",
+        "S1": "medium"
+      },
+      "M05": {
+        "T1": "medium",
+        "T2": "medium",
+        "T3": "medium",
+        "A1": "high",
+        "S1": "medium"
+      },
+      "M06": {
+        "T1": "high",
+        "T2": "high",
+        "T3": "high",
+        "A1": "low",
+        "S1": "high"
+      },
+      "M07": {
+        "T1": "low",
+        "T2": "low",
+        "T3": "medium",
+        "A1": "medium",
+        "S1": "low"
+      },
+      "M08": {
+        "T1": "high",
+        "T2": "high",
+        "T3": "high",
+        "A1": "high",
+        "S1": "high"
+      },
+      "M09": {
+        "T1": "low",
+        "T2": "low",
+        "T3": "high",
+        "A1": "low",
+        "S1": "low"
+      },
+      "M10": {
+        "T1": "medium",
+        "T2": "medium",
+        "T3": "medium",
+        "A1": "low",
+        "S1": "medium"
+      },
+      "M11": {
+        "T1": "high",
+        "T2": "high",
+        "T3": "low",
+        "A1": "high",
+        "S1": "high"
+      },
+      "M12": {
+        "T1": "high",
+        "T2": "high",
+        "T3": "low",
+        "A1": "medium",
+        "S1": "high"
+      }
+    }
+  },
+  "elicited_at": "2026-07-25T06:37:43+00:00"
+}

@@ -8,5 +8,7 @@ scipy>=1.10
 pyserial>=3.5
 sounddevice>=0.4        # real-time audio out (bundles PortAudio wheels)
 matplotlib>=3.6         # live plot in the UI
+anthropic>=0.40         # LLM-director elicitation (elicit_run_cli.py); Claude API calls
+
 # tkinter ships with the standard CPython installer on Windows/macOS.
 # On Debian/Ubuntu Linux: sudo apt install python3-tk

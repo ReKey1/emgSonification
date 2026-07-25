@@ -1,0 +1,61 @@
+{
+  "_README": [
+    "Fill every \"\" below. `elicit_cli.py build` refuses to run while any blank remains, and lists them.",
+    "Keys beginning with _ are hints and are ignored by the builder.",
+    "PROVENANCE (\u00a710.1): none of this may be written by a language model. The movement text is part of the stimulus set.",
+    "LEVELS are positional and built in: high/medium/low = top/middle/bottom third of the twelve on a feature. You do not author per-feature anchors.",
+    "p1_label: the verbatim style name + manner as a user would type it, e.g. 'a locking point, in slow motion'. Manner wording is fixed by \u00a710.2 -- M1 'as fast/strong as you can', M2 'in slow motion', M3 'as controlled as possible' -- and must not be reworded.",
+    "kinesic: an experimenter-written description of the movement with the style name and manner label STRIPPED (\u00a710.5 P2). If a style or manner word survives here, P2 is invalid.",
+    "P4 worked examples are NOT authored here: the builder draws two movements per call and fills their true levels from R1's tertiles. Nothing to fill in for few-shot."
+  ],
+  "movements": {
+    "kickback_fast": {
+      "p1_label": "A tricep kickback, with instructions to do the action as with as much speed as possible.",
+      "kinesic": "The body is positioned in a way such that the upper body is parallel to the ground and supported by a free arm. The other arm holds a weight and is tucked to the side of the body such that the upper arm is parallel to he body and the elbow is bent 90 degrees. The person then extends the elbow with as much speed as they are able to, coming to a stop at the full extention, then bringing the arm back down to the starting position."
+    },
+    "kickback_slow": {
+      "p1_label": "A tricep kickback, with instructions to do the action very slowly.",
+      "kinesic": "The body is positioned in a way such that the upper body is parallel to the ground and supported by a free arm. The other arm holds a weight and is tucked to the side of the body such that the upper arm is parallel to he body and the elbow is bent 90 degrees. The person then extends the elbow very slowly, coming to a stop at the full extention, then bringing the arm back down to the starting position."
+    },
+    "kickback_ctrl": {
+      "p1_label": "A tricep kickback, with instructions to do the action at the most comfortable, controllable speed.",
+      "kinesic": "The body is positioned in a way such that the upper body is parallel to the ground and supported by a free arm. The other arm holds a weight and is tucked to the side of the body such that the upper arm is parallel to he body and the elbow is bent 90 degrees. The person then extends the elbow in a speed that allows for best control in the movement, coming to a stop at the full extention, then bringing the arm back down to the starting position."
+    },
+    "overhead_fast": {
+      "p1_label": "A tricep overhead extention, with instructions to do the action with as much speed as possible.",
+      "kinesic": "The body begins in an upright position, holding a weight with both hands behind the head. The elbows are bent, and pointing straight up, near the ears. The person then extends both arms to move the weight upwards to full extention with as much speed as they can, briefly coming to a stop and coming back down."
+    },
+    "overhead_slow": {
+      "p1_label": "A tricep overhead extention, with instructions to do the action very slowly.",
+      "kinesic": "The body begins in an upright position, holding a weight with both hands behind the head. The elbows are bent, and pointing straight up, near the ears. The person then extends both arms to move the weight upwards to full extention very slowly, briefly coming to a stop and coming back down."
+    },
+    "overhead_ctrl": {
+      "p1_label": "A tricep overhead extention, with instructions to do the action at the most comfortable, controllable speed.",
+      "kinesic": "The body begins in an upright position, holding a weight with both hands behind the head. The elbows are bent, and pointing straight up, near the ears. The person then extends both arms to move the weight upwards to full extention in a speed which allows for the best control, briefly coming to a stop and coming back down."
+    },
+    "hit_fast": {
+      "p1_label": "A popping hit, with instructions to perform the action fast as possible.",
+      "kinesic": "The triceps are activated with as much speed as possible, and without pause loosened with as much speed as possible."
+    },
+    "hit_slow": {
+      "p1_label": "A popping hit, with instructions to perform the action very slowly.",
+      "kinesic": "The triceps are activated very slowly, and without pause loosened very slowly."
+    },
+    "hit_ctrl": {
+      "p1_label": "A popping hit, with instructions to do the action at the most comfortable, controllable speed.",
+      "kinesic": "The triceps are activated fashion, and without pause loosened."
+    },
+    "point_fast": {
+      "p1_label": "A locking point, with instructions to do the action with as much speed as possible.",
+      "kinesic": "The dancer begins with a fully bent elbow with their hand touching the chest with the index finger extended. The arm is extended forward with as much speed as possible to near full extention, and stopping all movement for a frozen effect."
+    },
+    "point_slow": {
+      "p1_label": "A locking point, with instructions to do the action very slowly.",
+      "kinesic": "The dancer begins with a fully bent elbow with their hand touching the chest with the index finger extended. The arm is extended forward very slowly to near full extention, and stopping all movement for a frozen effect."
+    },
+    "point_ctrl": {
+      "p1_label": "A locking point, with instructions to do the action at the most comfortable, controllable speed.",
+      "kinesic": "The dancer begins with a fully bent elbow with their hand touching the chest with the index finger extended. The arm is extended forward in a controllable speed to near full extention, and stopping all movement for a frozen effect."
+    }
+  }
+}

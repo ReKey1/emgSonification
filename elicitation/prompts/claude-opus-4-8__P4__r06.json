@@ -1,0 +1,834 @@
+{
+  "call_id": "claude-opus-4-8__P4__r06",
+  "model": "claude-opus-4-8",
+  "condition": "P4",
+  "repeat": 6,
+  "seed": 1,
+  "system": "You are rating how a set of arm movements appear in a single-channel surface EMG\nrecording of the triceps brachii (long head).\n\nFor each movement you will assign one ordinal level per feature, and you will also\nplace all 12 movements in rank order on each feature.\n\nLEVELS -- the same three for every feature, defined by position within this set:\nhigh   = among the top 4 of the 12 movements on this feature\nmedium = in the middle 4\nlow    = among the bottom 4\n\nFEATURES (each definition states what a HIGH value means):\n\nT1 - Rate of EMG rise (RER)\n  Peak of the derivative of the rectified, low-pass envelope -- how steeply muscle activity climbs as the movement starts.\n  Direction: high = climbs faster at onset.\n\nT2 - Offset rate\n  Rate of envelope decay at deactivation -- how steeply muscle activity falls away once the movement ends.\n  Direction: high = falls away faster at the end.\n\nT3 - Burst duration\n  Onset-to-offset interval divided by movement duration -- what fraction of the movement the muscle is active for.\n  Direction: high = active for a larger fraction of the movement.\n\nA1 - Peak amplitude\n  Peak of the envelope as a percentage of the session maximum voluntary contraction -- how hard the muscle is driven.\n  Direction: high = a larger peak.\n\nS1 - Median frequency (MDF)\n  The frequency dividing the power spectrum into equal-power halves, measured on the raw band-passed signal.\n  Direction: high = a higher median frequency.\n\nHOW TO ANSWER\n- Judge each movement relative to the other 11 in this set, not\n  against movement in general.\n- Use the full range. The set is constructed to span each feature.\n- Rank each feature from the highest value to the lowest, listing every movement\n  exactly once.\n- Return only JSON matching the supplied schema. No prose, no explanation.",
+  "user": "MOVEMENTS\nM01: A tricep kickback, with instructions to do the action at the most comfortable, controllable speed.\nM02: A tricep kickback, with instructions to do the action as with as much speed as possible.\nM03: A popping hit, with instructions to perform the action fast as possible.\nM04: A tricep overhead extention, with instructions to do the action at the most comfortable, controllable speed.\nM05: A locking point, with instructions to do the action with as much speed as possible.\nM06: A popping hit, with instructions to perform the action very slowly.\nM07: A locking point, with instructions to do the action very slowly.\nM08: A popping hit, with instructions to do the action at the most comfortable, controllable speed.\nM09: A tricep overhead extention, with instructions to do the action very slowly.\nM10: A tricep overhead extention, with instructions to do the action with as much speed as possible.\nM11: A tricep kickback, with instructions to do the action very slowly.\nM12: A locking point, with instructions to do the action at the most comfortable, controllable speed.\n\nWORKED EXAMPLES (true levels, from measurement):\n  A tricep overhead extention, with instructions to do the action very slowly. -> T1=low, T2=low, T3=medium, A1=low, S1=medium\n  A locking point, with instructions to do the action very slowly. -> T1=low, T2=low, T3=medium, A1=low, S1=medium\n\nAssign every movement a level on all 5 features, and give a full 12-item ranking per feature. Refer to movements by their identifier only.",
+  "response_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "rankings",
+      "levels"
+    ],
+    "properties": {
+      "rankings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "T1",
+          "T2",
+          "T3",
+          "A1",
+          "S1"
+        ],
+        "properties": {
+          "T1": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "M01",
+                "M02",
+                "M03",
+                "M04",
+                "M05",
+                "M06",
+                "M07",
+                "M08",
+                "M09",
+                "M10",
+                "M11",
+                "M12"
+              ]
+            },
+            "minItems": 12,
+            "maxItems": 12
+          },
+          "T2": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "M01",
+                "M02",
+                "M03",
+                "M04",
+                "M05",
+                "M06",
+                "M07",
+                "M08",
+                "M09",
+                "M10",
+                "M11",
+                "M12"
+              ]
+            },
+            "minItems": 12,
+            "maxItems": 12
+          },
+          "T3": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "M01",
+                "M02",
+                "M03",
+                "M04",
+                "M05",
+                "M06",
+                "M07",
+                "M08",
+                "M09",
+                "M10",
+                "M11",
+                "M12"
+              ]
+            },
+            "minItems": 12,
+            "maxItems": 12
+          },
+          "A1": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "M01",
+                "M02",
+                "M03",
+                "M04",
+                "M05",
+                "M06",
+                "M07",
+                "M08",
+                "M09",
+                "M10",
+                "M11",
+                "M12"
+              ]
+            },
+            "minItems": 12,
+            "maxItems": 12
+          },
+          "S1": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "M01",
+                "M02",
+                "M03",
+                "M04",
+                "M05",
+                "M06",
+                "M07",
+                "M08",
+                "M09",
+                "M10",
+                "M11",
+                "M12"
+              ]
+            },
+            "minItems": 12,
+            "maxItems": 12
+          }
+        }
+      },
+      "levels": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "M01",
+          "M02",
+          "M03",
+          "M04",
+          "M05",
+          "M06",
+          "M07",
+          "M08",
+          "M09",
+          "M10",
+          "M11",
+          "M12"
+        ],
+        "properties": {
+          "M01": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M02": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M03": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M04": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M05": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M06": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M07": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M08": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M09": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M10": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M11": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          },
+          "M12": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "T1",
+              "T2",
+              "T3",
+              "A1",
+              "S1"
+            ],
+            "properties": {
+              "T1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T2": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "T3": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "A1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "S1": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "id_map": {
+    "M01": "kickback_ctrl",
+    "M02": "kickback_fast",
+    "M03": "hit_fast",
+    "M04": "overhead_ctrl",
+    "M05": "point_fast",
+    "M06": "hit_slow",
+    "M07": "point_slow",
+    "M08": "hit_ctrl",
+    "M09": "overhead_slow",
+    "M10": "overhead_fast",
+    "M11": "kickback_slow",
+    "M12": "point_ctrl"
+  },
+  "few_shot": [
+    {
+      "movement": "overhead_slow",
+      "levels": {
+        "T1": "low",
+        "T2": "low",
+        "T3": "medium",
+        "A1": "low",
+        "S1": "medium"
+      }
+    },
+    {
+      "movement": "point_slow",
+      "levels": {
+        "T1": "low",
+        "T2": "low",
+        "T3": "medium",
+        "A1": "low",
+        "S1": "medium"
+      }
+    }
+  ]
+}
